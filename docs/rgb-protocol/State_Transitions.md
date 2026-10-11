@@ -1,0 +1,235 @@
+# State Transitions
+
+## State Transitions and their mechanics
+
+The approach followed in this paragraph is the same as that developed in the [TxO2 Client-side Validation chapter](/commitment-layer/commitment-schemes.md#txo2-client-side-validation) using our beloved cryptographic characters Alice and Bob.
+
+This time the explanation **contains an important difference**: Bob is not simply validating the client-side validated data that Alice shows him. He is actually asking Alice to add some additional data that **will give Bob some degree of ownership** over the contract expressed as a hidden reference to one of his Bitcoin [UTXOs](/annexes/glossary.md#utxo). Let's see how the process works in practice for a [State Transition](/annexes/glossary.md#state-transition) (one of the fundamental [Contract Operations](/annexes/glossary.md#contract-operation)):
+
+1. Alice has a [stash](/annexes/glossary.md#stash) of client-side validated data, which references a Bitcoin UTXO owned by her. This means that in her client-side validated data there is a [seal definition](/annexes/glossary.md#seal-definition) that points to one of her UTXOs.
+
+<figure><img src="https://160813645-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2FaUAGORrT1fl6qzaZSTKt%2Fuploads%2Fgit-blob-7cff9a0c3e4709cf8a8aba176497c195b4be59ae%2Fstab1.webp?alt=media" alt=""><figcaption><p>At the beginning of the State Transition, Alice possesses a certain stash and a UTXO. The idea behind the operation is that she will pass some digital rights in her possession to Bob.</p></figcaption></figure>
+
+2. Bob, in turn, also has unspent UTXOs. These UTXOs are completely unrelated to Alice's, which means that there is no direct spending event that creates a link between them. **If Bob doesn't possess any UTXO it is also possible to spend towards him the witness transaction** output containing the commitment to the client-side data and implicitly associate the ownership of the contract to him.
+
+<figure><img src="https://160813645-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2FaUAGORrT1fl6qzaZSTKt%2Fuploads%2Fgit-blob-ee6ec94cd6079f43f9cfb2d4e2aee003bcf73931%2Fstab2b.webp?alt=media" alt=""><figcaption><p><strong>Bob also owns some UTXOs. Moreover, they are unrelated to Alice's. This UTXO is an important, yet not mandatory, requirement to complete the State Transition. In case Bob doesn't possess any UTXO, it's also possible to spend the witness transaction towards him implicitly associating the new ownership to this new output.</strong></p></figcaption></figure>
+
+3. Bob, through some informational data, encoded in an [invoice](/annexes/glossary.md#invoice), instructs Alice to create a **New state** that follows the rules of the contract and which embeds a **new seal definition** pointing to one of his UTXOs in a concealed form (more on that [later](/rgb-state-and-operations/components-of-a-contract-operation.md#revealed-concealed-form)). In this way, Alice assigns Bob **some ownership** of the new state: for example, ownership of a certain amount of tokens.
+
+<figure><img src="https://160813645-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2FaUAGORrT1fl6qzaZSTKt%2Fuploads%2Fgit-blob-ce6a60bd4add246d38ca5bfec4ebc520dbf822eb%2Fstab3.webp?alt=media" alt=""><figcaption><p><strong>Bob shares with Alice the necessary data to build the State Transition that assigns him some new state.</strong></p></figcaption></figure>
+
+4. After that, Alice, using some [PSBT](/annexes/glossary.md#partially-signed-bitcoin-transaction-psbt) wallet tool, prepares a transaction that spends the UTXO that was indicated by the previous seal definition (the very same one that granted her ownership of some elements of the contracts). In this transaction, which is a [witness transaction](/annexes/glossary.md#witness-transaction), Alice embeds in one output a commitment to the new state data that uses [Opret](/commitment-layer/deterministic-bitcoin-commitments-dbc/opret.md) or [Tapret](/commitment-layer/deterministic-bitcoin-commitments-dbc/tapret.md) rules depending on the chosen method. As explained earlier, Opret or Tapret commitments are derived from an [MPC](/annexes/glossary.md#multi-protocol-commitment-mpc) tree which may collect more than one contract's state transition.
+5. Before transmitting the transaction thus prepared, Alice passes to Bob a data packet called [Consignment](/rgb-state-and-operations/state-transitions.md) which contains the organized stash of client-side data already in possession of Alice in addition to the new state. Bob, at this point, using RGB consensus rules:
+   * **Validates every RGB state transition** in the Consignment, including the one creating some New State assigned to his own UTXO, proving the **legitimacy** of the allocations' history.
+   * **Verifies** that every RGB state transition **is committed to in a valid** [**witness transaction**](/annexes/glossary.md#witness-transaction), ensuring that the corresponding seals are properly closed. This implies the **completeness** of the history from Genesis to the new state, since spending an allocation requires closing the corresponding seal, which is defined by the parent transition and must be present in **revealed** form in the consignment for the validation to pass.
+6. After checking the correctness of the Consignment, Bob may optionally give Alice a "go-ahead" signal (e.g., by GPG signing the [consignment](/annexes/glossary.md#consignment)). Alice, even without Bob's clearance, can now broadcast this last witness transaction, containing the New State. Once confirmed, such a witness transaction represents the conclusion of the [State Transition](/annexes/glossary.md#state-transition) from Alice to Bob.
+
+For the detailed process of a contract transfer with the RGB stack, see the [related section](/annexes/contract-transfers.md).
+
+<figure><img src="https://160813645-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2FaUAGORrT1fl6qzaZSTKt%2Fuploads%2Fgit-blob-92d72ae2aee85549d3359753945e510095b5f4e0%2Fstab4.webp?alt=media" alt=""><figcaption><p>T<strong>he new state points to Bob's UTXO by assigning him the digital property once in Alice's possession. The new state is committed in the witness transaction that spends the UTXO, which in turn proves Alice's ownership over the digital property that is passed over to Bob. The spending of the UTXO by Alice marks the completion of the State Transition embedding the same level of anti double-spending security as in Bitcoin.</strong></p></figcaption></figure>
+
+It's useful to see the full details of a DAG of two RGB contract operations - ([Genesis](/annexes/glossary.md#genesis) + a [State Transition](/annexes/glossary.md#state-transition)) - both from the RGB client-side components, which will be covered in the next few paragraphs, and from the *connection points* to the Bitcoin Blockchain which embeds the seal definition and the witness transaction.
+
+![A representation of RGB Layer (red) and Bitcoin Commitment Layer (orange) and their respective connections during contract operations. The diagram shows the combination of two contract operations: a Genesis, constructing a Seal Definition, and a State Transition which closes the seal previously defined in the Genesis and defines a new seal (new ownership) within another Bitcoin UTXO.  The State Transition Bundle is meant to collect more than one State Transition in case multiple seals are closed in the same witness transaction.](https://160813645-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2FaUAGORrT1fl6qzaZSTKt%2Fuploads%2Fgit-blob-3e9663ace9a92d9440e0d7401aac709d53918cc0%2Fstate-transition-2-detail.webp?alt=media)
+
+Just to give an introduction to the context of the above diagram, let us introduce terminology that will be discussed [later](/rgb-state-and-operations/components-of-a-contract-operation.md) in greater technical detail:
+
+* The [Assignment](/annexes/glossary.md#assignment) construct, which is pointed at Alice (in this example by the Genesis), and later used by Alice and pointed at Bob, is responsible for two things:
+  * The [Seal Definition](/annexes/glossary.md#seal-definition) which points to a specific UTXO (to Alice's first, by the Genesis created by a contract issuer, and later to Bob's by Alice herself).
+  * The association of the Seal Definition to specific sets of data called [Owned States](/annexes/glossary.md#owned-state) which, depending on the properties of the contract, can be chosen from several types. To give a simple context example, the amount of tokens transferred is a common kind of Owned State.
+* [Global State](/annexes/glossary.md#global-state), on the other hand, reflects general and **public properties** of a contract that are not meant to be owned, such as the total issued supply for a inflatable fungible asset.
+
+As mentioned [earlier](/rgb-state-and-operations/intro-smart-contract-states.md#introduction-to-states), a State Transition represents the main form within [Contract Operations](/annexes/glossary.md#contract-operation) (in addition to [Genesis](/annexes/glossary.md#genesis)). **State Transitions** refer to one or more previously defined state(s) - in Genesis or another State Transition - and update them to a **New State**.
+
+![A detailed view of a State Transition bundle, where two seal belonging to the same contract are closed by the same witness transaction. The diagram separates the RGB specific part from the Bitcoin Commitment Layer part, referencing the related libraries.](https://160813645-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2FaUAGORrT1fl6qzaZSTKt%2Fuploads%2Fgit-blob-0e142cfd8b153dd7ac22599bde7cf35fc19d8d0f%2Fstate-transition-3-bitcoin-rgb.webp?alt=media)
+
+As an interesting scalability feature of RGB, multiple **State Transitions** can be aggregated in a **Transition Bundle**, so that **each bundling operation** fits one and only one contract leaf in the [MPC](/annexes/glossary.md#multi-protocol-commitment-mpc) tree:
+
+* A [Transition Bundle](#transition-bundle) collects all transitions that refer to a given contract. State Transition details may be selectively revealed to different recipients, while the input map structure we will describe later ensures that allocations can be spent only once.
+* The Transition Bundle is hashed to produce its [BundleId](#bundleid), which is included in a leaf of the [MPC](/annexes/glossary.md#multi-protocol-commitment-mpc) Tree at a position that is determined by its contract ID.
+* When all bundles are included in the tree, the empty leaves are filled with random data and its merkle root is computed. The MPC commitment, composed by the merkle root and parameters used in the tree construction, is finally included into a Tapret or Opret output thanks to [DBC](/annexes/glossary.md#deterministic-bitcoin-commitment-dbc), so that the bitcoin transaction unequivocally commits to a set of RGB state transitions.
+* The [Anchor](/commitment-layer/anchors.md) represents the *connection point* between the Bitcoin Blockchain and the RGB client-side validation structure.
+
+In the following paragraphs, we will delve into all the elements and processes involved in the State Transition operation. All topics discussed from now on belong to RGB Consensus, which is encoded in the [RGB Consensus Library](/annexes/rgb-library-map.md#rgb-consensus).
+
+## Transition Bundle
+
+A transition bundle is essentially the collection of all state transitions in a given witness transaction that operate on a certain contract. **In the simplest case, such as the one shown above between Alice and Bob, a Transition Bundle consists of a single state transition**.
+
+However, RGB natively supports batching operations, so that one or more payers can send assets to one or more payees and multiple transition types and state types are involved (e.g. atomically sending tokens and inflation rights). In these cases, all the operations involving a certain contract would belong to the same position in the MPC tree, so they need to be deterministically bundled in order to fit in a single MPC leaf. The corresponding [witness transaction](/annexes/glossary.md#witness-transaction) then needs to close all the seals that are spent by each state transition.
+
+A Transition Bundle contains:
+
+* `input_map`, which maps all the [Assignments](/annexes/glossary.md#assignment) being spent to the State Transition spending each of them; it contains all the information that needs to be committed onchain
+* `known_transitions`, a subset of all transitions in the bundle whose details are explicitly provided; the remaining ones are said to be *concealed*
+
+```
+TransitionBundle {
+    input_map: Map<Opout, OpId>,
+    known_transitions: Vec<KnownTransition>,
+}
+```
+
+Assignments are identified by the `Opout` structure, which contains:
+
+* the Identifier of the Operation that created this Assignment
+* assignment Type, distinguishing for instance token ownership from issuance Rights
+* assignment Number, the index of this assignment within the previous operation, akin to bitcoin's `vout`
+
+```
+Opout {
+    op: OpId,
+    ty: AssignmentType,
+    no: u16,
+}
+```
+
+### BundleId
+
+From a more technical angle, the `BundleId` to be inserted in the leaf of the [MPC](/rgb-state-and-operations/state-transitions.md) is [obtained](/annexes/commitments.md#bundle-id) from a tagged hash of the strict serialization of the `input_map` field of the bundle in the following way:
+
+`BundleId = SHA-256( SHA-256(bundle_tag) || SHA-256(bundle_tag) || input_map )`
+
+Where:
+
+* `bundle_tag = urn:lnp-bp:rgb:bundle#2024-02-03`
+
+The input map gets serialized in the following way:
+
+```
+input_map =
+
+     N                    Opout_1                       OpId_1                     Opout_N                       OpId_N
+|__________||_____________________________________||____________| ... |_____________________________________||____________|
+ 16-bit LE   32-byte hash + 16-bit LE + 16-bit LE   32-byte hash       32-byte hash + 16-bit LE + 16-bit LE   32-byte hash
+|__________||___________________________________________________| ... |___________________________________________________|
+   MapSize                       MapElement_1                                              MapElement_N
+```
+
+Where:
+
+* `N` is the total number of opouts spent by some transition in the current bundle.
+* `Opout_i` is the `i`-th spent Assignment, which contains:
+  * 32-byte previous operation ID
+  * 16-bit assignment type, e.g. 4000 for nia assets
+  * 16-bit assignment number
+* `OpId_i` is the Operation Identifier of the State Transition which spends the `i`-th Assignment
+* `Opouts` are sorted lexicographically to obtain a deterministic `BundleId`
+
+**Note:** A given `OpId` may appear multiple times if a transition spends multiple assignments, but the opposite is not true. An `Opout` can only be spent by a single State Transition, which guarantees the absence of double spends if we consider that the corresponding seal is closed by the witness transaction. As a consequence, some State Transition may be omitted (concealed) from the Bundle for privacy reasons, while their OpId inside the input map ensures that no other (possibly concealed) transition can spend the same Opout(s).
+
+## State Generation and Active State
+
+State transitions, just covered in the previous sections, allow the transfer of ownership of certain state properties from one party to another. However, state transitions are only one of the [Contract Operations](/annexes/glossary.md#contract-operation) allowed in RGB. The other one, which allows to generate new state at the issuance of a contract, is called **Genesis**.
+
+The following figure shows the three components of contract operations along with their position in the RGB contract DAG, linked to their respective anchors in the Bitcoin Blockchain. State Transitions are represented by the red blocks.
+
+```mermaid
+flowchart LR
+    subgraph RGB["RGB Contract"]
+        direction TB
+        G["Genesis"]
+
+        G --> C0[" "]
+        G --> C1[" "]
+        C0 --> C2[" "]
+        C1 --> C3[" "]
+        C2 --> C3
+        C2 --> C4[" "]
+        C3 --> C5[" "]
+        C4 --> C6[" "]
+        C5 --> C7[" "]
+        C6 --> C8[" "]
+        C7 --> C8
+    end
+
+    subgraph Anchors["Anchors"]
+        direction TB
+        A0[" "]
+        A1[" "]
+        A2[" "]
+        A3[" "]
+        A4[" "]
+        A5[" "]
+        A6[" "]
+        A7[" "]
+    end
+
+    subgraph Blockchain["Blockchain"]
+        direction TB
+        B0[" "]
+        B1[" "]
+        B2[" "]
+        B3[" "]
+        B4[" "]
+        B5[" "]
+        B6[" "]
+
+        B0 --> B1 --> B2 --> B3 --> B4 --> B5 --> B6
+    end
+
+    C0 --> A1
+    C1 --> A0
+    C2 --> A2
+    C3 --> A3
+    C4 --> A3
+    C5 --> A4
+    C6 --> A6
+    C7 --> A5
+    C8 --> A7
+
+    A0 --> B0
+    A1 --> B1
+    A2 --> B1
+    A3 --> B2
+    A4 --> B4
+    A5 --> B5
+    A6 --> B5
+    A7 --> B6
+
+    style C0 fill:#ED2939,stroke:#ED2939
+    style C1 fill:#ED2939,stroke:#ED2939
+    style C2 fill:#ED2939,stroke:#ED2939
+    style C3 fill:#ED2939,stroke:#ED2939
+    style C4 fill:#ED2939,stroke:#ED2939
+    style C5 fill:#ED2939,stroke:#ED2939
+    style C6 fill:#ED2939,stroke:#ED2939
+    style C7 fill:#ED2939,stroke:#ED2939
+    style C8 fill:#ED2939,stroke:#ED2939
+
+    style A0 fill:#808080,stroke:#808080
+    style A1 fill:#808080,stroke:#808080
+    style A2 fill:#808080,stroke:#808080
+    style A3 fill:#808080,stroke:#808080
+    style A4 fill:#808080,stroke:#808080
+    style A5 fill:#808080,stroke:#808080
+    style A6 fill:#808080,stroke:#808080
+    style A7 fill:#808080,stroke:#808080
+
+    style B0 fill:#F98129,stroke:#F98129
+    style B1 fill:#F98129,stroke:#F98129
+    style B2 fill:#F98129,stroke:#F98129
+    style B3 fill:#F98129,stroke:#F98129
+    style B4 fill:#F98129,stroke:#F98129
+    style B5 fill:#F98129,stroke:#F98129
+    style B6 fill:#F98129,stroke:#F98129
+```
+
+It is important to note that the main difference between ordinary State Transitions and Genesis lies in the **lack of the closing part of the seal**. Hence **Genesis is only committed into the blockchain history when a State Transition closes one of the seals defined by it**.
+
+Another obvious, but crucial, aspect to keep in mind is that the **Active State(s)** are the last state(s) at the leaves of the [DAG](/rgb-state-and-operations/state-transitions.md) of contract operations that reference themselves in the order committed into the Bitcoin Blockchain, starting from the Genesis. All other states associated with spent UTXOs are no longer valid but are critical to the validation process.
+
+### Genesis
+
+Genesis represents the **initial data block of each RGB contract.** It is constructed by a [contract issuer](/annexes/glossary.md#contract-participant) and any state transitions must be connected to it through the DAG of the contract operations.\
+In Genesis, according to the rules defined in the [Schema](/annexes/glossary.md#schema), are defined several properties affecting deeply the contract states, both of [owned](/annexes/glossary.md#owned-state) and [global](/annexes/glossary.md#global-state) form.
+
+To give an example, in the case of a contract defining the creation of a token, the following data are likely to be inscribed in Genesis:
+
+* The number of tokens issued and their owner(s) (the owner(s) of the UTXO referred to in the seal definition's genesis).
+* The maximum number of tokens to be issued in total.
+* The possibility of inflation and the designed party that possesses this right.
+
+As a natural implication, **Genesis does not refer to any previous state transition**, nor does it close any previously defined seal. As mentioned above, to be effectively validated in the history of the chain, a Genesis must be referenced by a first state transition (e.g. an auto-spend to the issuer or a first round of distribution), which finalizes the "first ownership" of the contract through a commitment to the Bitcoin Blockchain.
+
+***
