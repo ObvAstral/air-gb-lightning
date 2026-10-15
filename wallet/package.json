@@ -13,7 +13,11 @@
     "build": "npm run build -w @airgb/web",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test packages/policy/*.test.ts apps/local-service/*.test.ts",
-    "native:build": "node infra/native/build.mjs"
+    "native:build": "node infra/native/build.mjs",
+    "qvac:doctor": "qvac doctor",
+    "qvac:precache": "node scripts/qvac-precache.mjs",
+    "qvac:serve": "qvac serve --openai --port 11434 -c qvac.config.json",
+    "qvac:smoke": "node --import tsx scripts/qvac-smoke-test.mjs"
   },
   "devDependencies": {
     "@types/node": "24.5.2",

@@ -1,0 +1,76 @@
+{
+  "loggerConsoleOutput": true,
+  "loggerLevel": "info",
+  "httpDownloadConcurrency": 3,
+  "httpConnectionTimeoutMs": 10000,
+  "serve": {
+    "cors": {
+      "origins": [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:8787",
+        "http://localhost:8787"
+      ]
+    },
+    "openai": {
+      "audio": {
+        "speech": {
+          "defaultVoice": "alloy",
+          "voices": {
+            "alloy": "my-tts"
+          }
+        }
+      }
+    },
+    "models": {
+      "my-llm": {
+        "model": "QWEN3_8B_INST_Q4_K_M",
+        "default": true,
+        "preload": true,
+        "config": {
+          "ctx_size": 8192,
+          "tools": true
+        }
+      },
+      "qwen-fast": {
+        "model": "QWEN3_5_0_8B_MULTIMODAL_Q4_K_M",
+        "preload": false,
+        "config": {
+          "ctx_size": 8192,
+          "tools": true,
+          "projectionModelSrc": "MMPROJ_QWEN3_5_0_8B_MULTIMODAL_Q8_0"
+        }
+      },
+      "my-embed": {
+        "model": "EMBEDDINGGEMMA_300M_Q4_0",
+        "default": true,
+        "preload": false
+      },
+      "whisper": {
+        "model": "WHISPER_EN_TINY_Q8_0",
+        "default": true,
+        "preload": false,
+        "config": {
+          "language": "en",
+          "strategy": "greedy",
+          "no_timestamps": true,
+          "suppress_blank": true,
+          "suppress_nst": true,
+          "temperature": 0
+        }
+      },
+      "my-tts": {
+        "model": "TTS_MULTILINGUAL_SUPERTONIC3_Q4_0",
+        "default": true,
+        "preload": false,
+        "config": {
+          "ttsEngine": "supertonic",
+          "language": "en",
+          "voice": "F1",
+          "ttsSpeed": 1.05,
+          "ttsNumInferenceSteps": 5
+        }
+      }
+    }
+  }
+}
