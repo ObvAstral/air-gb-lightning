@@ -1,0 +1,20 @@
+{
+  "name": "air-gb-wallet",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev -w @airgb/service\" \"npm run dev -w @airgb/web\"",
+    "dev:regtest": "concurrently -k \"npm run dev:regtest -w @airgb/service\" \"npm run dev -w @airgb/web\"",
+    "dev:peer": "node infra/regtest/run-peer.mjs",
+    "build": "npm run build -w @airgb/web",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test packages/policy/*.test.ts apps/local-service/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.5.2",
+    "concurrently": "9.2.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

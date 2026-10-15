@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExtractedConstraints",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "feeLimit", "excludedNodeReferences", "priority", "privacyRequest", "unhandledRequests"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "status": {"enum": ["parsed", "needs_clarification", "out_of_scope"]},
+    "feeLimit": {"anyOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["value", "unit", "comparison"], "properties": {"value": {"type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$", "maxLength": 32}, "unit": {"enum": ["sat", "msat"]}, "comparison": {"enum": ["lte", "lt"]}}}]},
+    "excludedNodeReferences": {"type": "array", "maxItems": 10, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 100}},
+    "priority": {"enum": [null, "balanced", "lowest_fee", "reliability"]},
+    "privacyRequest": {"enum": [null, "avoid_extra_probing", "unspecified"]},
+    "unhandledRequests": {"type": "array", "maxItems": 10, "items": {"type": "string", "minLength": 1, "maxLength": 200}}
+  }
+}

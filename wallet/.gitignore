@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.db
+*.sqlite
+*.sqlite3
+*.log
+native-data/
+models/
+keystore/
