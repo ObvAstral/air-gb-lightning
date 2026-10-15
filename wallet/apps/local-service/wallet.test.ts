@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { VaultStore } from './vault.js';
 import { WdkWallet } from './wallet.js';
+import { prepareSignerStorage } from './persistent-signer.js';
 
 test('keystore cifra entropia, recupera frase e respinge password errata', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'airgb-vault-'));
@@ -47,4 +48,42 @@ test('canali normalizzano liquidità direzionale e importi RGB del binding nativ
   assert.equal(channel.inboundMsat, '0');
   assert.equal(channel.assetLocalAmount, '10000');
   assert.equal(channel.assetRemoteAmount, '0');
+});
+
+test('il signer persistente rifiuta stato nativo precedente privo di stato VLS', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'airgb-signer-state-'));
+  try {
+    await prepareSignerStorage(dir);
+    await writeFile(join(dir, 'previous-native-state'), 'state');
+    await assert.rejects(prepareSignerStorage(dir), { code: 'SIGNER_STATE_MISSING' });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('ricezione RGB generica richiede una scelta esplicita e rifiuta importi senza asset', async () => {
+  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-rgb-receive'));
+  let calls = 0;
+  (wallet as unknown as { account: unknown }).account = { createRgbInvoice: async (request: Record<string, unknown>) => {
+    calls++;
+    assert.equal(Object.hasOwn(request, 'asset_id'), false);
+    assert.equal(Object.hasOwn(request, 'assignment_amount'), false);
+    return { invoice: 'rgb:test-generic-invoice' };
+  } };
+  await assert.rejects(wallet.createRgbInvoice({ assetId: null, amount: '1000', expirySec: 3600 }));
+  await assert.rejects(wallet.createRgbInvoice({ assetId: 'rgb:test', amount: null, expirySec: 3600 }));
+  assert.equal(calls, 0);
+  assert.equal((await wallet.createRgbInvoice({ assetId: null, amount: null, expirySec: 3600 })).invoice, 'rgb:test-generic-invoice');
+  assert.equal(calls, 1);
+});
+
+test('parametri UTXO invalidi bloccano la mutazione nativa', async () => {
+  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-rgb-utxos'));
+  let calls = 0;
+  (wallet as unknown as { account: unknown }).account = { createUtxos: async () => { calls++; } };
+  const valid = { count: 4, sizeSat: '200000', feeRateSatPerVbyte: '2' };
+  for (const invalid of [{ ...valid, count: 0 }, { ...valid, sizeSat: '-1' }, { ...valid, sizeSat: '1' }, { ...valid, feeRateSatPerVbyte: '101' }]) {
+    await assert.rejects(wallet.prepareRgbUtxos(invalid));
+  }
+  assert.equal(calls, 0);
+  assert.equal((await wallet.prepareRgbUtxos(valid)).status, 'requested');
+  assert.equal(calls, 1);
 });

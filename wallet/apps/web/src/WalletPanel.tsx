@@ -28,6 +28,11 @@ export function WalletPanel({ token }: { token: string }) {
   const [receiveAmount, setReceiveAmount] = useState('');
   const [receiveAssetId, setReceiveAssetId] = useState('');
   const [receiveAssetAmount, setReceiveAssetAmount] = useState('');
+  const [receiveAnyAsset, setReceiveAnyAsset] = useState(true);
+  const [utxoCount, setUtxoCount] = useState('4');
+  const [utxoSizeSat, setUtxoSizeSat] = useState('200000');
+  const [utxoFeeRate, setUtxoFeeRate] = useState('2');
+  const [utxoMessage, setUtxoMessage] = useState('');
   const [receivedInvoice, setReceivedInvoice] = useState('');
   const [invoiceStatus, setInvoiceStatus] = useState<unknown>(null);
   const [bitcoinHistory, setBitcoinHistory] = useState<unknown>(null);
@@ -68,22 +73,31 @@ export function WalletPanel({ token }: { token: string }) {
     </div>}
     {recovery && <div className="notice"><strong>Salva la frase di recupero ora.</strong><p>{recovery}</p><p>Il seed non recupera da solo lo stato dei canali RGB Lightning.</p><button onClick={() => setRecovery(null)}>Ho salvato la frase</button></div>}
     {state?.keystoreExists && state.node !== 'ready' && <div><label>Password per sbloccare<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} /></label><button disabled={busy || !password} onClick={() => void action(async () => { await api('/api/wallet/unlock', { password }); setPassword(''); await refresh(); })}>Sblocca nodo</button></div>}
-    {summary && <div><h3>Dashboard</h3><dl><dt>Node ID</dt><dd>{summary.nodeId}</dd><dt>Indirizzo BTC regtest</dt><dd>{summary.address}</dd><dt>BTC spendibili</dt><dd>{summary.btcSpendableSat} sat</dd>{summary.peerUri && <><dt>Indirizzo peer locale</dt><dd>{summary.peerUri}</dd></>}</dl><button disabled={busy} onClick={() => void action(refresh)}>Aggiorna dati</button></div>}
+    {summary && <div><h3>Dashboard</h3><dl><dt>Node ID</dt><dd>{summary.nodeId}</dd><dt>Indirizzo BTC regtest</dt><dd>{summary.address}</dd><dt>BTC spendibili</dt><dd>{summary.btcSpendableSat} sat</dd>{summary.peerUri && <><dt>Indirizzo peer locale</dt><dd>{summary.peerUri}</dd></>}</dl><button disabled={busy} onClick={() => void action(async () => { await api('/api/wallet/sync', {}); await refresh(); })}>Aggiorna dati e trasferimenti</button></div>}
     {state?.node === 'ready' && <>
       <details><summary>Ricevi BTC Lightning o RGB</summary>
         <label>Tipo<select value={receiveKind} onChange={e => { setReceiveKind(e.target.value as typeof receiveKind); setReceivedInvoice(''); setInvoiceStatus(null); }}><option value="btc-lightning">BTC Lightning</option><option value="rgb-lightning">RGB Lightning</option><option value="rgb-onchain">RGB on-chain</option></select></label>
-        <label>{receiveKind === 'rgb-onchain' ? 'Importo RGB in unità minime' : 'Importo Lightning in msat'}<input value={receiveAmount} onChange={e => { setReceiveAmount(e.target.value); setReceivedInvoice(''); setInvoiceStatus(null); }} inputMode="numeric" /></label>
-        {receiveKind !== 'btc-lightning' && <label>Contract ID RGB<input value={receiveAssetId} onChange={e => { setReceiveAssetId(e.target.value); setReceivedInvoice(''); setInvoiceStatus(null); }} /></label>}
+        {receiveKind === 'rgb-onchain' && <label><input type="checkbox" checked={receiveAnyAsset} onChange={e => { setReceiveAnyAsset(e.target.checked); setReceivedInvoice(''); }} /> Invoice generica per un nuovo asset, senza contract ID o importo prefissati</label>}
+        {!(receiveKind === 'rgb-onchain' && receiveAnyAsset) && <label>{receiveKind === 'rgb-onchain' ? 'Importo RGB in unità minime' : 'Importo Lightning in msat'}<input value={receiveAmount} onChange={e => { setReceiveAmount(e.target.value); setReceivedInvoice(''); setInvoiceStatus(null); }} inputMode="numeric" /></label>}
+        {receiveKind !== 'btc-lightning' && !(receiveKind === 'rgb-onchain' && receiveAnyAsset) && <label>Contract ID RGB<input value={receiveAssetId} onChange={e => { setReceiveAssetId(e.target.value); setReceivedInvoice(''); setInvoiceStatus(null); }} /></label>}
         {receiveKind === 'rgb-lightning' && <label>Importo RGB in unità minime<input value={receiveAssetAmount} onChange={e => { setReceiveAssetAmount(e.target.value); setReceivedInvoice(''); setInvoiceStatus(null); }} inputMode="numeric" /></label>}
         <button disabled={busy} onClick={() => void action(async () => {
           const response = receiveKind === 'rgb-onchain'
-            ? await api<{ invoice: string }>('/api/wallet/receive/rgb', { assetId: receiveAssetId, amount: receiveAmount, expirySec: 3600 })
+            ? await api<{ invoice: string }>('/api/wallet/receive/rgb', { assetId: receiveAnyAsset ? null : receiveAssetId, amount: receiveAnyAsset ? null : receiveAmount, expirySec: 3600 })
             : await api<{ invoice: string }>('/api/wallet/receive/lightning', { amountMsat: receiveAmount, expirySec: 3600, ...(receiveKind === 'rgb-lightning' ? { assetId: receiveAssetId, assetAmount: receiveAssetAmount } : {}) });
           setReceivedInvoice(response.invoice); setInvoiceStatus(null);
         })}>Genera invoice</button>
         {receivedInvoice && <label>Invoice generata<textarea readOnly value={receivedInvoice} /></label>}
         {receivedInvoice && receiveKind !== 'rgb-onchain' && <button disabled={busy} onClick={() => void action(async () => setInvoiceStatus(await api('/api/wallet/receive/lightning/status', { invoice: receivedInvoice })))}>Aggiorna stato invoice</button>}
         {invoiceStatus !== null && <pre>{JSON.stringify(invoiceStatus, null, 2)}</pre>}
+      </details>
+      <details><summary>Prepara UTXO per ricezione e canali RGB</summary>
+        <p>Serve BTC regtest disponibile. Questa operazione può creare una transazione Bitcoin e pagare la fee indicata. Dopo la conferma dei blocchi, aggiorna i dati.</p>
+        <label>Numero totale di UTXO RGB desiderati<input value={utxoCount} onChange={e => { setUtxoCount(e.target.value); setUtxoMessage(''); }} inputMode="numeric" /></label>
+        <label>Dimensione di ciascun UTXO in sat<input value={utxoSizeSat} onChange={e => { setUtxoSizeSat(e.target.value); setUtxoMessage(''); }} inputMode="numeric" /></label>
+        <label>Fee in sat/vB<input value={utxoFeeRate} onChange={e => { setUtxoFeeRate(e.target.value); setUtxoMessage(''); }} inputMode="numeric" /></label>
+        <button disabled={busy} onClick={() => void action(async () => { await api('/api/wallet/rgb/utxos', { count: Number(utxoCount), sizeSat: utxoSizeSat, feeRateSatPerVbyte: utxoFeeRate }); setUtxoMessage('Preparazione richiesta. Conferma eventuali transazioni regtest e aggiorna i dati.'); await refresh(); })}>Conferma preparazione UTXO RGB</button>
+        {utxoMessage && <p role="status">{utxoMessage}</p>}
       </details>
       <details><summary>Peer e canali</summary><p>Peer: {peers.length} · Canali: {channels.length} · Asset: {assets.length}</p>
         <label>Peer regtest, formato pubkey@host:porta<input value={peer} onChange={e => setPeer(e.target.value)} placeholder="02...@127.0.0.1:9736" /></label>

@@ -14,7 +14,7 @@ const token = randomBytes(32).toString('hex');
 const wallet = new WdkWallet();
 const payments = new PaymentStore(wallet.dataDir, wallet);
 const capabilities: RoutingCapabilities = Object.freeze({
-  backendVersion: 'wdk-rgb-lightning-beta.15', revision: 'native-routing-unverified-0', hardFeeCap: false,
+  backendVersion: 'wdk-rgb-lightning-beta.15/native-beta.16+signer-0fb005e', revision: 'native-routing-unverified-1', hardFeeCap: false,
   hardNodeExclusion: false, hardChannelExclusion: false, perPaymentScoringProfile: false,
   avoidExtraProbing: false, canInspectFullRoute: false, canGuaranteeConstraintsAcrossRetries: false,
 });
@@ -73,12 +73,20 @@ const server = createServer(async (req, res) => {
       await wallet.unlock(body.password);
       return json(res, 200, await wallet.state());
     }
+    if (path === '/api/wallet/sync') {
+      await wallet.refresh();
+      return json(res, 200, { synced: true });
+    }
+    if (path === '/api/wallet/rgb/utxos') {
+      if (typeof body.count !== 'number' || typeof body.sizeSat !== 'string' || typeof body.feeRateSatPerVbyte !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
+      return json(res, 200, await wallet.prepareRgbUtxos({ count: body.count, sizeSat: body.sizeSat, feeRateSatPerVbyte: body.feeRateSatPerVbyte }));
+    }
     if (path === '/api/wallet/receive/lightning') {
       if (typeof body.amountMsat !== 'string' || typeof body.expirySec !== 'number') return json(res, 400, { code: 'INVALID_INPUT' });
       return json(res, 200, await wallet.createLightningInvoice({ amountMsat: body.amountMsat, expirySec: body.expirySec, assetId: typeof body.assetId === 'string' ? body.assetId : undefined, assetAmount: typeof body.assetAmount === 'string' ? body.assetAmount : undefined }));
     }
     if (path === '/api/wallet/receive/rgb') {
-      if (typeof body.assetId !== 'string' || typeof body.amount !== 'string' || typeof body.expirySec !== 'number') return json(res, 400, { code: 'INVALID_INPUT' });
+      if ((body.assetId !== null && typeof body.assetId !== 'string') || (body.amount !== null && typeof body.amount !== 'string') || typeof body.expirySec !== 'number') return json(res, 400, { code: 'INVALID_INPUT' });
       return json(res, 200, await wallet.createRgbInvoice({ assetId: body.assetId, amount: body.amount, expirySec: body.expirySec }));
     }
     if (path === '/api/wallet/peers/connect') {

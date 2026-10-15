@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import WalletManagerRgbLightning, { type WalletAccountRgbLightning } from '@utexo/wdk-rgb-lightning';
 import { validNodeId } from '../../packages/policy/compile.js';
 import { VaultStore } from './vault.js';
+import { PersistentSignerError, PersistentWalletManager, prepareSignerStorage } from './persistent-signer.js';
 
 export class WalletError extends Error { constructor(public code: string, message: string) { super(message); } }
 export type DecodedLightning = {
@@ -84,7 +85,8 @@ export class WdkWallet {
     try {
       await lease.writeFile(String(process.pid));
       const listeningPort = this.listeningPort;
-      manager = new WalletManagerRgbLightning(mnemonic, { network: 'regtest', dataDir: join(this.dataDir, 'wdk-rgb-lightning'), nodeSeedDerivation: 'auto', ldkPeerListeningPort: listeningPort });
+      await prepareSignerStorage(join(this.dataDir, 'wdk-rgb-lightning'));
+      manager = new PersistentWalletManager(mnemonic, { network: 'regtest', dataDir: join(this.dataDir, 'wdk-rgb-lightning'), nodeSeedDerivation: 'wdk-seed-v2', ldkPeerListeningPort: listeningPort });
       const account = await manager.getAccount(0);
       await account.unlock({
         bitcoind_rpc_username: process.env.BITCOIND_RPC_USER,
@@ -100,6 +102,7 @@ export class WdkWallet {
       this.manager = manager; this.account = account; this.lease = lease;
     } catch (error) {
       try { if (manager) this.disposeManager(manager); } finally { await lease.close(); await unlink(lockPath).catch(() => undefined); }
+      if (error instanceof PersistentSignerError) throw new WalletError(error.code, error.message);
       throw error;
     }
   }
@@ -117,6 +120,18 @@ export class WdkWallet {
     return { network: 'regtest', address: address.address, nodeId, peerUri: port ? `${nodeId}@127.0.0.1:${port}` : null, btcSpendableSat: btc.toString(), nodeInfo: object(node), networkInfo: object(network) };
   }
   async sync() { await this.requireAccount().sync(); }
+  async refresh() {
+    await this.sync();
+    await this.requireAccount().refreshTransfers({ filter: [], skip_sync: false });
+  }
+  async prepareRgbUtxos(input: { count: number; sizeSat: string; feeRateSatPerVbyte: string }) {
+    if (!Number.isSafeInteger(input.count) || input.count < 1 || input.count > 8) throw new WalletError('INVALID_UTXO_COUNT', 'Numero UTXO compreso tra 1 e 8');
+    const size = safeNumber(input.sizeSat, 'Dimensione UTXO in sat');
+    const feeRate = safeNumber(input.feeRateSatPerVbyte, 'Fee in sat/vB');
+    if (size < 10000 || size > 1000000 || feeRate > 100) throw new WalletError('INVALID_UTXO_PARAMETERS', 'Dimensione UTXO: 10000–1000000 sat; fee: 1–100 sat/vB');
+    await this.requireAccount().createUtxos({ up_to: true, num: input.count, size, fee_rate: feeRate, skip_sync: false });
+    return { status: 'requested', confirmationRequired: true };
+  }
   async channels() {
     const source = await this.requireAccount().listChannels();
     return records(source, 'channels').map(row => ({
@@ -173,11 +188,14 @@ export class WdkWallet {
     if (typeof response.invoice !== 'string' || !response.invoice.toLowerCase().startsWith('lnbcrt')) throw new WalletError('INVOICE_SHAPE', 'Risposta invoice nativa non riconosciuta');
     return { invoice: response.invoice, kind: input.assetId ? 'rgb-lightning' : 'btc-lightning', expirySec: input.expirySec };
   }
-  async createRgbInvoice(input: { assetId: string; amount: string; expirySec: number }) {
-    if (!input.assetId || !input.assetId.startsWith('rgb:')) throw new WalletError('INVALID_ASSET', 'Contract ID RGB richiesto');
-    const amount = safeNumber(input.amount, 'Importo RGB');
+  async createRgbInvoice(input: { assetId: string | null; amount: string | null; expirySec: number }) {
     if (!Number.isSafeInteger(input.expirySec) || input.expirySec < 60 || input.expirySec > 86400) throw new WalletError('INVALID_EXPIRY', 'Scadenza RGB non valida');
-    const response = object(await this.requireAccount().createRgbInvoice({ min_confirmations: 1, witness: false, asset_id: input.assetId, assignment_kind: 'Fungible', assignment_amount: amount, duration_seconds: input.expirySec }));
+    const request: Record<string, unknown> = { min_confirmations: 1, witness: false, duration_seconds: input.expirySec };
+    if (input.assetId !== null || input.amount !== null) {
+      if (!input.assetId?.startsWith('rgb:') || input.amount === null) throw new WalletError('INVALID_ASSET', 'Specificare contract ID e importo oppure scegliere una invoice generica');
+      Object.assign(request, { asset_id: input.assetId, assignment_kind: 'Fungible', assignment_amount: safeNumber(input.amount, 'Importo RGB') });
+    }
+    const response = object(await this.requireAccount().createRgbInvoice(request));
     const invoice = stringField(response, 'invoice');
     if (!invoice) throw new WalletError('INVOICE_SHAPE', 'Risposta RGB nativa non riconosciuta');
     return { invoice, kind: 'rgb-onchain' };
