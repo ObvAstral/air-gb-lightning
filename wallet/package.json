@@ -27,7 +27,7 @@
     "@types/node": "24.5.2",
     "@utexo/wdk-wallet-rgb": "2.0.3",
     "concurrently": "9.2.5",
-    "tsx": "4.20.6",
+    "tsx": "4.23.15",
     "typescript": "5.9.3"
   },
   "engines": {

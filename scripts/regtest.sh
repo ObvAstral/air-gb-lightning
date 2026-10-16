@@ -28,9 +28,17 @@ miner_address() {
 }
 
 ensure_miner() {
-  if ! btc listwallets | grep -q '"miner"'; then
-    btc createwallet miner >/dev/null
+  local wallets dir
+  wallets="$(btc listwallets)"
+  if printf '%s\n' "$wallets" | grep -q '"miner"'; then
+    return 0
   fi
+  dir="$(btc listwalletdir)"
+  if printf '%s\n' "$dir" | grep -q '"name": "miner"'; then
+    btc -named loadwallet filename=miner load_on_startup=true >/dev/null
+    return 0
+  fi
+  btc -named createwallet wallet_name=miner load_on_startup=true >/dev/null
 }
 
 mine() {
