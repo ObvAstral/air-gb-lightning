@@ -131,7 +131,7 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/payments/prepare') {
       if (typeof body.id !== 'string' || typeof body.invoice !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
-      return json(res, 200, await payments.prepare({ id: body.id, invoice: body.invoice, amountMsat: typeof body.amountMsat === 'string' ? body.amountMsat : undefined, constraints: body.constraints }));
+      return json(res, 200, await payments.prepare({ id: body.id, invoice: body.invoice, amountMsat: typeof body.amountMsat === 'string' ? body.amountMsat : undefined, constraints: body.constraints, routing: body.routing }));
     }
     if (path === '/api/payments/confirm') {
       if (typeof body.id !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });

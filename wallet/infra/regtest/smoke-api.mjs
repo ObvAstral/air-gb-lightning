@@ -62,6 +62,11 @@ try {
   const blocked = await request('/api/payments/prepare', authorized, { id: 'smoke-constraint-01', invoice: 'lnbcrt-unused', constraints: { feeLimitMsat: '0' } });
   assert.equal(blocked.status, 422);
   assert.equal(blocked.body.code, 'CONSTRAINT_UNSUPPORTED');
+  for (const routing of [undefined, { algorithm: 'auto' }, { algorithm: 'multi_objective' }]) {
+    const invalid = await request('/api/payments/prepare', authorized, { id: 'smoke-routing-01', invoice: 'lnbcrt-unused', routing });
+    assert.equal(invalid.status, 422);
+    assert.equal(invalid.body.code, 'INVALID_ROUTING');
+  }
   const disabled = await request('/api/payments/confirm', authorized, { id: 'smoke-constraint-01' });
   assert.equal(disabled.body.code, 'SEND_DISABLED');
   assert.deepEqual((await request('/api/payments', authorized)).body, []);

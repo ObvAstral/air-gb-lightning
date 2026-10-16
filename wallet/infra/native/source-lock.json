@@ -5,12 +5,12 @@
   "node": {
     "repository": "https://github.com/ObvAstral/rgb-lightning-node.git",
     "branch": "feat/rgb-mpp",
-    "commit": "dbee4aabd519917f604911832828775d8da10e00"
+    "commit": "7106edd0fa3dd0a8bc0f35e54cefac844495a068"
   },
   "lightning": {
     "repository": "https://github.com/ObvAstral/rust-lightning.git",
     "branch": "feat/rgb-mpp",
-    "commit": "02dc5d2aac909ce6747597cb3346b126a5617f9d"
+    "commit": "2f19847fc65a16294abcc26188ba8443804662be"
   },
   "features": ["electrum", "block-sync"]
 }

@@ -1,5 +1,6 @@
 import { open, unlink, type FileHandle } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { PaymentRouting } from '../../packages/contracts/types.js';
 import { validNodeId } from '../../packages/policy/compile.js';
 import { VaultStore } from './vault.js';
 import { RlnAccount, RlnDaemon, RlnError, prepareRlnStorage } from './rln.js';
@@ -263,11 +264,11 @@ export class RgbWallet {
     if (input.assetId) { request.asset_id = input.assetId; request.asset_amount = safeNumber(input.assetAmount!, 'Importo asset'); }
     return object(await this.requireAccount().openChannel(request));
   }
-  async sendLightning(decoded: DecodedLightning, amountMsat: string): Promise<Record<string, unknown>> {
+  async sendLightning(decoded: DecodedLightning, amountMsat: string, routing: PaymentRouting): Promise<Record<string, unknown>> {
     if (!this.canSend) throw new WalletError('SEND_DISABLED', 'Invio regtest non abilitato');
     const amount = safeNumber(amountMsat, 'Importo Lightning');
     if (decoded.amountMsat !== null && decoded.amountMsat !== amountMsat) throw new WalletError('AMOUNT_MISMATCH', 'Importo diverso dalla invoice');
-    const request: Record<string, unknown> = { invoice: decoded.invoice };
+    const request: Record<string, unknown> = { invoice: decoded.invoice, routing };
     if (decoded.amountMsat === null) request.amt_msat = amount;
     if (decoded.assetId) { request.asset_id = decoded.assetId; request.asset_amount = safeNumber(decoded.assetAmount!, 'Importo RGB'); }
     return object(await this.requireAccount().sendPayment(request));

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { VaultStore } from './vault.js';
 import { RgbWallet } from './wallet.js';
 import { prepareRlnStorage } from './rln.js';
+import type { PaymentRouting } from '../../packages/contracts/types.js';
 
 test('keystore cifra entropia, recupera frase e respinge password errata', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'airgb-vault-'));
@@ -130,4 +131,27 @@ test('listAssets accetta gli schemi non richiesti null della fork', async () => 
   const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-assets'));
   (wallet as unknown as { account: unknown }).account = { listAssets: async () => ({ nia: [{ asset_id: 'rgb:test', ticker: 'TEST', name: 'Test' }], uda: null, cfa: [], ifa: null }) };
   assert.deepEqual(await wallet.assets(), [{ assetId: 'rgb:test', ticker: 'TEST', name: 'Test', kind: 'nia' }]);
+});
+
+test('sendLightning inoltra il routing scelto per invoice BTC, RGB e senza importo', async () => {
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-send-routing'));
+  const previous = process.env.ENABLE_REGTEST_SEND;
+  process.env.ENABLE_REGTEST_SEND = '1';
+  let body: unknown;
+  (wallet as unknown as { account: unknown }).account = { sendPayment: async (request: unknown) => { body = request; return { status: 'Pending' }; } };
+  const base = { invoice: 'lnbcrt-routing', network: 'regtest' as const, paymentHash: 'a'.repeat(64), payeePubkey: null, amountMsat: '3000000', assetId: null, assetAmount: null, expiresAt: Date.now() + 60000, description: null };
+  const policies: PaymentRouting[] = [{ algorithm: 'ldk_dijkstra' }, { algorithm: 'yen' }, { algorithm: 'min_cost_flow' }, { algorithm: 'multi_objective', weights: { fee: 1, reliability: 2, cltv: 1, hops: 10 } }];
+  try {
+    for (const routing of policies) {
+      await wallet.sendLightning(base, '3000000', routing);
+      assert.deepEqual(body, { invoice: base.invoice, routing });
+      await wallet.sendLightning({ ...base, amountMsat: null }, '3000000', routing);
+      assert.deepEqual(body, { invoice: base.invoice, amt_msat: 3000000, routing });
+      await wallet.sendLightning({ ...base, assetId: 'rgb:test', assetAmount: '10' }, '3000000', routing);
+      assert.deepEqual(body, { invoice: base.invoice, asset_id: 'rgb:test', asset_amount: 10, routing });
+    }
+  } finally {
+    if (previous === undefined) delete process.env.ENABLE_REGTEST_SEND;
+    else process.env.ENABLE_REGTEST_SEND = previous;
+  }
 });

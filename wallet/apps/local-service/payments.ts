@@ -1,18 +1,19 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { ROUTING_ALGORITHMS, type PaymentRouting } from '../../packages/contracts/types.js';
 import type { DecodedLightning } from './wallet.js';
 import { WalletError } from './wallet.js';
 
 export type PaymentRecord = {
   id: string; paymentHash: string; invoice: string; amountMsat: string; assetId: string | null;
   assetAmount: string | null; status: 'prepared' | 'unknown' | 'pending' | 'succeeded' | 'failed';
-  createdAt: number; updatedAt: number; nativePaymentId: string | null;
+  createdAt: number; updatedAt: number; nativePaymentId: string | null; routing: PaymentRouting;
 };
 type WalletPort = {
   canSend: boolean;
   decodeLightning(invoice: string): Promise<DecodedLightning>;
-  sendLightning(decoded: DecodedLightning, amountMsat: string): Promise<Record<string, unknown>>;
+  sendLightning(decoded: DecodedLightning, amountMsat: string, routing: PaymentRouting): Promise<Record<string, unknown>>;
   paymentStatus(hash: string): Promise<Record<string, unknown>>;
 };
 const normalizeStatus = (value: unknown): PaymentRecord['status'] => {
@@ -29,6 +30,21 @@ const blankConstraints = (value: unknown): boolean => {
   const row = value as Record<string, unknown>;
   return Object.keys(row).length === 0;
 };
+const parseRouting = (value: unknown): PaymentRouting => {
+  const invalid = () => new WalletError('INVALID_ROUTING', 'Scegliere un algoritmo valido; multi_objective richiede pesi fee, reliability, cltv e hops interi tra 0 e 1000000, almeno uno positivo');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
+  const row = value as Record<string, unknown>;
+  if (!ROUTING_ALGORITHMS.some(algorithm => algorithm === row.algorithm) || Object.keys(row).some(key => key !== 'algorithm' && key !== 'weights')) throw invalid();
+  if (row.algorithm !== 'multi_objective') {
+    if (Object.hasOwn(row, 'weights')) throw invalid();
+    return { algorithm: row.algorithm as Exclude<PaymentRouting['algorithm'], 'multi_objective'> };
+  }
+  if (!row.weights || typeof row.weights !== 'object' || Array.isArray(row.weights)) throw invalid();
+  const weights = row.weights as Record<string, unknown>;
+  const keys = ['fee', 'reliability', 'cltv', 'hops'] as const;
+  if (Object.keys(weights).length !== keys.length || !keys.every(key => typeof weights[key] === 'number' && Number.isInteger(weights[key]) && weights[key] >= 0 && weights[key] <= 1_000_000) || !keys.some(key => Number(weights[key]) > 0)) throw invalid();
+  return { algorithm: 'multi_objective', weights: { fee: Number(weights.fee), reliability: Number(weights.reliability), cltv: Number(weights.cltv), hops: Number(weights.hops) } };
+};
 
 export class PaymentStore {
   private db: DatabaseSync;
@@ -36,12 +52,15 @@ export class PaymentStore {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(directory, 'payments.sqlite'));
     this.db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS intents (id TEXT PRIMARY KEY, payment_hash TEXT UNIQUE NOT NULL, invoice TEXT NOT NULL, amount_msat TEXT NOT NULL, asset_id TEXT, asset_amount TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, native_payment_id TEXT)');
+    const columns = this.db.prepare('PRAGMA table_info(intents)').all();
+    // Existing intents used the old daemon's fixed LDK algorithm.
+    if (!columns.some(column => column.name === 'routing')) this.db.exec(`ALTER TABLE intents ADD COLUMN routing TEXT NOT NULL DEFAULT '{"algorithm":"ldk_dijkstra"}'`);
     this.db.exec("UPDATE intents SET status='unknown', updated_at=strftime('%s','now')*1000 WHERE status='pending'");
   }
   private row(id: string): PaymentRecord | null {
     const row = this.db.prepare('SELECT * FROM intents WHERE id=?').get(id) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return { id: String(row.id), paymentHash: String(row.payment_hash), invoice: String(row.invoice), amountMsat: String(row.amount_msat), assetId: row.asset_id as string | null, assetAmount: row.asset_amount as string | null, status: row.status as PaymentRecord['status'], createdAt: Number(row.created_at), updatedAt: Number(row.updated_at), nativePaymentId: row.native_payment_id as string | null };
+    return { id: String(row.id), paymentHash: String(row.payment_hash), invoice: String(row.invoice), amountMsat: String(row.amount_msat), assetId: row.asset_id as string | null, assetAmount: row.asset_amount as string | null, status: row.status as PaymentRecord['status'], createdAt: Number(row.created_at), updatedAt: Number(row.updated_at), nativePaymentId: row.native_payment_id as string | null, routing: parseRouting(JSON.parse(String(row.routing))) };
   }
   get(id: string): PaymentRecord | null { return this.row(id); }
   list(): PaymentRecord[] {
@@ -59,12 +78,13 @@ export class PaymentStore {
     }
     return refreshed;
   }
-  async prepare(input: { id: string; invoice: string; amountMsat?: string; constraints?: unknown }): Promise<PaymentRecord> {
+  async prepare(input: { id: string; invoice: string; amountMsat?: string; constraints?: unknown; routing?: unknown }): Promise<PaymentRecord> {
     if (!/^[a-zA-Z0-9_-]{8,80}$/.test(input.id)) throw new WalletError('INVALID_INTENT_ID', 'ID intento non valido');
     if (!blankConstraints(input.constraints)) throw new WalletError('CONSTRAINT_UNSUPPORTED', 'Il pagamento vincolato non è ancora supportato');
+    const routing = parseRouting(input.routing);
     const existing = this.row(input.id);
     if (existing) {
-      if (existing.invoice !== input.invoice || (input.amountMsat && existing.amountMsat !== input.amountMsat)) throw new WalletError('INTENT_CONFLICT', 'ID già associato a un altro pagamento');
+      if (existing.invoice !== input.invoice || (input.amountMsat && existing.amountMsat !== input.amountMsat) || JSON.stringify(existing.routing) !== JSON.stringify(routing)) throw new WalletError('INTENT_CONFLICT', 'ID già associato a un altro pagamento o algoritmo');
       return existing;
     }
     const decoded = await this.wallet.decodeLightning(input.invoice);
@@ -75,7 +95,7 @@ export class PaymentStore {
     if (decoded.assetId && BigInt(amount) < 3_000_000n) throw new WalletError('RGB_HTLC_MINIMUM', 'RGB Lightning richiede almeno 3000000 msat in questa versione');
     const now = Date.now();
     try {
-      this.db.prepare('INSERT INTO intents (id,payment_hash,invoice,amount_msat,asset_id,asset_amount,status,created_at,updated_at,native_payment_id) VALUES (?,?,?,?,?,?,?, ?,?,NULL)').run(input.id, decoded.paymentHash, input.invoice, amount, decoded.assetId, decoded.assetAmount, 'prepared', now, now);
+      this.db.prepare('INSERT INTO intents (id,payment_hash,invoice,amount_msat,asset_id,asset_amount,status,created_at,updated_at,native_payment_id,routing) VALUES (?,?,?,?,?,?,?, ?,?,NULL,?)').run(input.id, decoded.paymentHash, input.invoice, amount, decoded.assetId, decoded.assetAmount, 'prepared', now, now, JSON.stringify(routing));
     } catch { throw new WalletError('DUPLICATE_INVOICE', 'Questa invoice appartiene già a un intento'); }
     return this.row(input.id)!;
   }
@@ -90,7 +110,7 @@ export class PaymentStore {
     const updated = this.db.prepare("UPDATE intents SET status='unknown',updated_at=? WHERE id=? AND status='prepared'").run(Date.now(), id);
     if (updated.changes !== 1) return this.row(id)!;
     try {
-      const native = await this.wallet.sendLightning(decoded, record.amountMsat);
+      const native = await this.wallet.sendLightning(decoded, record.amountMsat, record.routing);
       const status = normalizeStatus(native.status);
       const nativeId = typeof native.payment_id === 'string' ? native.payment_id : null;
       this.db.prepare('UPDATE intents SET status=?,native_payment_id=?,updated_at=? WHERE id=?').run(status, nativeId, Date.now(), id);

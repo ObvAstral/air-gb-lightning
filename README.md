@@ -5,8 +5,8 @@
 Local regtest environment with bitcoind, electrs, RGB proxy, and two Lightning nodes (Alice and Bob).
 The Lightning backend uses ObvAstral's personal forks with RGB MPP support:
 
-- [`rgb-lightning-node`, `feat/rgb-mpp`](https://github.com/ObvAstral/rgb-lightning-node/tree/feat/rgb-mpp), commit `dbee4aabd519917f604911832828775d8da10e00`.
-- [`rust-lightning`, `feat/rgb-mpp`](https://github.com/ObvAstral/rust-lightning/tree/feat/rgb-mpp), commit `02dc5d2aac909ce6747597cb3346b126a5617f9d`.
+- [`rgb-lightning-node`, `feat/rgb-mpp`](https://github.com/ObvAstral/rgb-lightning-node/tree/feat/rgb-mpp), commit `7106edd0fa3dd0a8bc0f35e54cefac844495a068`.
+- [`rust-lightning`, `feat/rgb-mpp`](https://github.com/ObvAstral/rust-lightning/tree/feat/rgb-mpp), commit `2f19847fc65a16294abcc26188ba8443804662be`.
 
 Commits, toolchain, and the `Cargo.lock` hash are pinned in
 [`wallet/infra/native/source-lock.json`](wallet/infra/native/source-lock.json).
@@ -89,12 +89,26 @@ npm run cli -- issue alice --ticker DEMO --name "Demo asset" --amount 1000
 npm run cli -- connect alice
 npm run cli -- channel alice --capacity 200000 --asset rgb:... --amount 100
 npm run cli -- invoice bob --asset rgb:... --amount 10
-npm run cli -- pay alice --invoice lnbcrt...
+npm run cli -- pay alice --invoice lnbcrt... --algorithm ldk_dijkstra
 ```
 
 Passwords in `AIRGB_ALICE_PASSWORD` and `AIRGB_BOB_PASSWORD`, or entered at the prompt.
 `channel` waits for the funding transaction, mines, and verifies the channel.
 `mine` mines in batches of 6 up to 100 blocks. The UI exposes the same operations.
+Payments require an explicit routing algorithm: `ldk_dijkstra`, `yen`,
+`min_cost_flow`, or `multi_objective`. Choose it in the UI or pass `--algorithm`
+to `pay`. For `multi_objective`, also pass
+`--weights '{"fee":1,"reliability":2,"cltv":1,"hops":10}'`; the UI exposes these
+four weights. Each weight must be an integer between 0 and 1000000 and at least
+one must be positive. The alternative planners are experimental and may fail
+where another algorithm succeeds; the selected algorithm is never changed automatically.
+
+`POST /api/payments/prepare` requires `routing`, for example
+`{"id":"payment-0001","invoice":"lnbcrt...","routing":{"algorithm":"yen"}}`.
+For `multi_objective`, include `weights` inside `routing`. The selected algorithm
+and weights are saved with the intent and cannot be changed for the same ID.
+Existing intents retain the previous daemon's `ldk_dijkstra` selection.
+
 The optional on-chain issuer (`issuer`, `send --from issuer`) retains
 `@utexo/wdk-wallet-rgb` and `AIRGB_ISSUER_PASSWORD`; this library does not manage
 Lightning nodes and requires Node `24.19.0`.

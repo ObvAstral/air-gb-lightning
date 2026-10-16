@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { VaultStore } from '../../apps/local-service/vault.ts';
+import { ROUTING_ALGORITHMS } from '../../packages/contracts/types.ts';
 
 const walletRoot = fileURLToPath(new URL('../../', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -46,7 +47,8 @@ function help() {
   connect <alice|bob> [--peer pubkey@host:porta]
   channel <alice|bob> --capacity <sat> --asset <rgb:...> --amount <unità> [--peer ...]
   invoice <alice|bob> --asset <rgb:...> --amount <unità> [--msat 3000000] [--expiry 3600]
-  pay <alice|bob> --invoice <lnbcrt...>
+  pay <alice|bob> --invoice <lnbcrt...> --algorithm <ldk_dijkstra|yen|min_cost_flow|multi_objective>
+    multi_objective richiede --weights '{"fee":1,"reliability":2,"cltv":1,"hops":10}'
   issuer create
   issuer status|sync|fund|utxos
   issuer fund <btc>
@@ -384,7 +386,7 @@ async function receiverName(payer, payee) {
   return other(payer);
 }
 
-async function payNode(name, invoice) {
+async function payNode(name, invoice, routing) {
   if (!/^lnbcrt/i.test(invoice)) throw new CliError('INVALID_INVOICE', 'Serve una invoice Lightning regtest');
   const api = await nodeSession(name);
   const decoded = await api('/api/payments/decode', { invoice });
@@ -395,8 +397,9 @@ async function payNode(name, invoice) {
   line('asset', decoded.assetId);
   line('importo', decoded.assetAmount);
   line('scadenza', Number.isSafeInteger(decoded.expiresAt) ? new Date(decoded.expiresAt).toISOString() : '');
+  line('algoritmo', routing.algorithm);
   const id = randomUUID();
-  await api('/api/payments/prepare', { id, invoice: decoded.invoice, constraints: {} });
+  await api('/api/payments/prepare', { id, invoice: decoded.invoice, constraints: {}, routing });
   let sent = await api('/api/payments/confirm', { id });
   for (let attempt = 0; attempt < 30 && !['succeeded', 'failed'].includes(sent.status); attempt++) {
     await pause(1000);
@@ -636,6 +639,7 @@ async function main() {
       asset: { type: 'string' }, amount: { type: 'string' }, msat: { type: 'string' }, count: { type: 'string' },
       size: { type: 'string' }, fee: { type: 'string' }, ticker: { type: 'string' }, name: { type: 'string' },
       precision: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' }, invoice: { type: 'string' },
+      algorithm: { type: 'string' }, weights: { type: 'string' },
       expiry: { type: 'string' },
     },
   });
@@ -661,7 +665,14 @@ async function main() {
   if (command === 'invoice') return invoiceNode(nodeName(target), requireAsset(values.asset), positiveInt(values.amount, 'Importo asset'), values.msat === undefined ? 3000000 : positiveInt(values.msat, 'msat'), values.expiry === undefined ? 3600 : positiveInt(values.expiry, 'Scadenza'));
   if (command === 'pay') {
     if (typeof values.invoice !== 'string') throw new CliError('USAGE', 'Manca --invoice');
-    return payNode(nodeName(target), values.invoice);
+    if (!ROUTING_ALGORITHMS.includes(values.algorithm)) throw new CliError('USAGE', `Specificare --algorithm: ${ROUTING_ALGORITHMS.join(', ')}`);
+    if ((values.algorithm === 'multi_objective') !== (values.weights !== undefined)) throw new CliError('USAGE', '--weights è richiesto solo con --algorithm multi_objective');
+    const routing = { algorithm: values.algorithm };
+    if (values.weights !== undefined) {
+      try { routing.weights = JSON.parse(values.weights); }
+      catch { throw new CliError('USAGE', '--weights deve essere un oggetto JSON con fee, reliability, cltv e hops'); }
+    }
+    return payNode(nodeName(target), values.invoice, routing);
   }
   if (command === 'issuer') return issuerDispatch(target, extra, values, count, fee);
   if (command === 'send') {

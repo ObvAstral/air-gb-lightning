@@ -1,8 +1,8 @@
 diff --git a/src/main.rs b/src/main.rs
-index 7a147abe08f051a438b74d8ca1212b6492837239..6bf4824bd25f71dcf019b4e2cbed6d8a409ae010 100644
+index d8d0a78cc29a89dff1369ff31bf79fff36e895e5..e08c08aa5d06e7bcb3aa6502122042d1ce33e6d6 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
+@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
          .with(file_log.with_filter(filter::LevelFilter::DEBUG))
          .init();
  
@@ -11,7 +11,7 @@ index 7a147abe08f051a438b74d8ca1212b6492837239..6bf4824bd25f71dcf019b4e2cbed6d8a
  
      let (router, app_state) = app(args).await?;
  
-@@ -233,7 +233,22 @@ pub(crate) async fn app(args: UserArgs) -> Result<(Router, Arc<AppState>), AppEr
+@@ -236,7 +236,22 @@ pub(crate) async fn app(args: UserArgs) -> Result<(Router, Arc<AppState>), AppEr
              app_state.clone(),
              conditional_auth_middleware,
          ))

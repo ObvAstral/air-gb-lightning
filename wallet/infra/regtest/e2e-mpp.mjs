@@ -100,7 +100,7 @@ try {
   const decoded = await alice.decodeLightning(invoice.invoice);
   assert.equal(decoded.assetAmount, '100');
   payments = new PaymentStore(alice.dataDir, alice);
-  const intent = await payments.prepare({ id: randomUUID(), invoice: invoice.invoice });
+  const intent = await payments.prepare({ id: randomUUID(), invoice: invoice.invoice, routing: { algorithm: 'ldk_dijkstra' } });
   process.env.ENABLE_REGTEST_SEND = '1';
   await payments.confirm(intent.id);
   await until('pagamento MPP', async () => {

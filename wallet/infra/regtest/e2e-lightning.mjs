@@ -117,7 +117,7 @@ try {
 
   const invoice = await b.createLightningInvoice({ amountMsat: '5000000', expirySec: 3600 });
   const id = randomUUID();
-  const prepared = await payments.prepare({ id, invoice: invoice.invoice, constraints: {} });
+  const prepared = await payments.prepare({ id, invoice: invoice.invoice, constraints: {}, routing: { algorithm: 'ldk_dijkstra' } });
   process.env.ENABLE_REGTEST_SEND = '1';
   let sent = await payments.confirm(prepared.id);
   for (let i = 0; i < 30 && !['succeeded', 'failed'].includes(sent.status); i++) {

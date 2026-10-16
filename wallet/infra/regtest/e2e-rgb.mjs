@@ -202,7 +202,7 @@ try {
     }
   }
   if (!invoice) throw new Error('Bob non riesce a creare l\'invoice RGB Lightning');
-  const prepared = await payments.prepare({ id: randomUUID(), invoice: invoice.invoice, constraints: {} });
+  const prepared = await payments.prepare({ id: randomUUID(), invoice: invoice.invoice, constraints: {}, routing: { algorithm: 'ldk_dijkstra' } });
   process.env.ENABLE_REGTEST_SEND = '1';
   let sent = await payments.confirm(prepared.id);
   for (let attempt = 0; attempt < 30 && !['succeeded', 'failed'].includes(sent.status); attempt++) {

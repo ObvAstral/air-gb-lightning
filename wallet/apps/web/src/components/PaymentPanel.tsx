@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNodeSession } from './node-client.js';
+import { ROUTING_ALGORITHMS, type RoutingAlgorithm, type ObjectiveWeights, type PaymentRouting } from '../../../../packages/contracts/types.js';
 
 const RGB_HTLC_MINIMUM_MSAT = '3000000';
 
 type WalletState = { node: string; sendEnabled: boolean };
 type Decoded = { invoice: string; paymentHash: string; amountMsat: string | null; assetId: string | null; assetAmount: string | null; expiresAt: number; payeePubkey: string | null };
-type Intent = { id: string; paymentHash: string; amountMsat: string; assetId: string | null; status: string };
+type Intent = { id: string; paymentHash: string; amountMsat: string; assetId: string | null; status: string; routing: PaymentRouting };
 type NativePayment = { paymentHash: string | null; status: string; amountMsat: string | null; assetId: string | null; assetAmount: string | null };
 
 type PaymentPanelProps = { label: string; baseUrl: string };
@@ -22,6 +23,8 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
   const [invoiceStatus, setInvoiceStatus] = useState<unknown>(null);
   const [sendInvoice, setSendInvoice] = useState('');
   const [sendAmount, setSendAmount] = useState('');
+  const [algorithm, setAlgorithm] = useState<RoutingAlgorithm>('ldk_dijkstra');
+  const [weights, setWeights] = useState<ObjectiveWeights>({ fee: 1, reliability: 2, cltv: 1, hops: 10 });
   const [decoded, setDecoded] = useState<Decoded | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [history, setHistory] = useState<NativePayment[]>([]);
@@ -64,6 +67,12 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
       <h3>Invia</h3>
       <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setIntent(null); }} /></label>
       <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setIntent(null); }} inputMode="numeric" /></label>
+      <label>Algoritmo di routing<select disabled={busy || intent !== null} value={algorithm} onChange={event => setAlgorithm(event.target.value as RoutingAlgorithm)}>
+        {ROUTING_ALGORITHMS.map(value => <option key={value} value={value}>{value}</option>)}
+      </select></label>
+      {algorithm === 'multi_objective' && <div className="row">
+        {(['fee', 'reliability', 'cltv', 'hops'] as const).map(key => <label key={key}>Peso {key}<input type="number" min="0" max="1000000" step="1" disabled={busy || intent !== null} value={weights[key]} onChange={event => setWeights(previous => ({ ...previous, [key]: Number(event.target.value) }))} /></label>)}
+      </div>}
       <button disabled={busy || !sendInvoice} onClick={() => void action(async () => setDecoded(await api<Decoded>('/api/payments/decode', { invoice: sendInvoice })))}>Decodifica</button>
       {decoded && <div>
         <dl>
@@ -74,11 +83,12 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
         </dl>
         <button disabled={busy} onClick={() => void action(async () => {
           const id = crypto.randomUUID();
-          setIntent(await api<Intent>('/api/payments/prepare', { id, invoice: decoded.invoice, ...(sendAmount ? { amountMsat: sendAmount } : {}), constraints: {} }));
+          const routing: PaymentRouting = algorithm === 'multi_objective' ? { algorithm, weights } : { algorithm };
+          setIntent(await api<Intent>('/api/payments/prepare', { id, invoice: decoded.invoice, ...(sendAmount ? { amountMsat: sendAmount } : {}), constraints: {}, routing }));
         })}>Prepara</button>
       </div>}
       {intent && <div className="notice">
-        <p>Intento {intent.id}: {intent.status}. {intent.amountMsat} msat{intent.assetId ? ` · ${intent.assetId}` : ''}.</p>
+        <p>Intento {intent.id}: {intent.status}. {intent.amountMsat} msat{intent.assetId ? ` · ${intent.assetId}` : ''}. Algoritmo: {intent.routing.algorithm}.</p>
         <button disabled={busy || intent.status !== 'prepared' || !state?.sendEnabled} onClick={() => void action(async () => { setIntent(await api<Intent>('/api/payments/confirm', { id: intent.id })); await refresh(); })}>Conferma invio</button>
         <button disabled={busy} onClick={() => void action(async () => setIntent(await api<Intent>(`/api/payments/${intent.id}`)))}>Aggiorna stato</button>
       </div>}
