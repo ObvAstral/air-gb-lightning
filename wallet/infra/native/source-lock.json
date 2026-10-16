@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "rustToolchain": "1.94.0",
+  "cargoLockSha256": "7dc783227feeffbe4e76ff509559f35357ef636751da6dc73fbba7e2f10bf9fa",
+  "node": {
+    "repository": "https://github.com/ObvAstral/rgb-lightning-node.git",
+    "branch": "feat/rgb-mpp",
+    "commit": "dbee4aabd519917f604911832828775d8da10e00"
+  },
+  "lightning": {
+    "repository": "https://github.com/ObvAstral/rust-lightning.git",
+    "branch": "feat/rgb-mpp",
+    "commit": "02dc5d2aac909ce6747597cb3346b126a5617f9d"
+  },
+  "features": ["electrum", "block-sync"]
+}

@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { VaultStore } from './vault.js';
-import { WdkWallet } from './wallet.js';
-import { prepareSignerStorage } from './persistent-signer.js';
+import { RgbWallet } from './wallet.js';
+import { prepareRlnStorage } from './rln.js';
 
 test('keystore cifra entropia, recupera frase e respinge password errata', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'airgb-vault-'));
@@ -21,7 +21,7 @@ test('keystore cifra entropia, recupera frase e respinge password errata', async
 });
 
 test('decoder Lightning verifica rete, scadenza e campi RGB', async () => {
-  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused'));
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused'));
   const invoice = 'lnbcrt' + 'a'.repeat(40);
   const base = { network: 'regtest', payment_hash: 'a'.repeat(64), timestamp: Math.floor(Date.now() / 1000), expiry_sec: 3600, amt_msat: 3000000, asset_id: 'rgb:test-contract', asset_amount: 2 };
   (wallet as unknown as { account: unknown }).account = { decodeInvoice: async () => base };
@@ -36,7 +36,7 @@ test('decoder Lightning verifica rete, scadenza e campi RGB', async () => {
 });
 
 test('canali normalizzano liquidità direzionale e importi RGB del binding nativo', async () => {
-  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-channels'));
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-channels'));
   (wallet as unknown as { account: unknown }).account = { listChannels: async () => [{
     channel_id: 'channel-test', peer_pubkey: 'peer-test', capacity_sat: '150000',
     outbound_balance_msat: '142840000', inbound_balance_msat: 0,
@@ -51,17 +51,19 @@ test('canali normalizzano liquidità direzionale e importi RGB del binding nativ
   assert.equal(channel.fundingTxid, 'ab'.repeat(32));
 });
 
-test('il signer persistente rifiuta stato nativo precedente privo di stato VLS', async () => {
+test('la fork MPP rifiuta lo stato UTEXO senza modificarlo', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'airgb-signer-state-'));
   try {
-    await prepareSignerStorage(dir);
-    await writeFile(join(dir, 'previous-native-state'), 'state');
-    await assert.rejects(prepareSignerStorage(dir), { code: 'SIGNER_STATE_MISSING' });
+    const legacy = join(dir, 'wdk-rgb-lightning');
+    await mkdir(legacy);
+    await writeFile(join(legacy, 'previous-native-state'), 'state');
+    await assert.rejects(prepareRlnStorage(dir), { code: 'LEGACY_NODE_STATE' });
+    assert.equal(await readFile(join(legacy, 'previous-native-state'), 'utf8'), 'state');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('ricezione RGB generica richiede una scelta esplicita e rifiuta importi senza asset', async () => {
-  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-rgb-receive'));
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-rgb-receive'));
   let calls = 0;
   (wallet as unknown as { account: unknown }).account = { createRgbInvoice: async (request: Record<string, unknown>) => {
     calls++;
@@ -77,7 +79,7 @@ test('ricezione RGB generica richiede una scelta esplicita e rifiuta importi sen
 });
 
 test('parametri UTXO invalidi bloccano la mutazione nativa', async () => {
-  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-rgb-utxos'));
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-rgb-utxos'));
   let calls = 0;
   (wallet as unknown as { account: unknown }).account = { createUtxos: async () => { calls++; } };
   const valid = { count: 4, sizeSat: '200000', feeRateSatPerVbyte: '2' };
@@ -90,13 +92,13 @@ test('parametri UTXO invalidi bloccano la mutazione nativa', async () => {
 });
 
 test('UTXO RGB già presenti non sono un errore', async () => {
-  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-rgb-utxos-ready'));
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-rgb-utxos-ready'));
   (wallet as unknown as { account: unknown }).account = { createUtxos: async () => { throw new Error('Rln(Conflict): Allocations already available'); } };
   assert.deepEqual(await wallet.prepareRgbUtxos({ count: 4, sizeSat: '200000', feeRateSatPerVbyte: '2' }), { status: 'ready', confirmationRequired: false });
 });
 
 test('issueNia rifiuta input invalidi e inoltra il body NIA valido', async () => {
-  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-issue'));
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-issue'));
   let calls = 0;
   let request: unknown;
   (wallet as unknown as { account: unknown }).account = {
@@ -124,10 +126,8 @@ test('issueNia rifiuta input invalidi e inoltra il body NIA valido', async () =>
   assert.equal(issued.issuedSupply, '1000');
 });
 
-test('issueNia traduce il rifiuto del signer esterno', async () => {
-  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-issue-signer'));
-  (wallet as unknown as { account: unknown }).account = {
-    issueAssetNia: async () => { throw new Error('Rln(UnsupportedInExternalSignerMode): asset issuance is not supported in external signer mode'); },
-  };
-  await assert.rejects(wallet.issueNia({ ticker: 'DEMO', name: 'Demo', precision: 0, amounts: [1000] }), { code: 'ISSUANCE_UNSUPPORTED' });
+test('listAssets accetta gli schemi non richiesti null della fork', async () => {
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-assets'));
+  (wallet as unknown as { account: unknown }).account = { listAssets: async () => ({ nia: [{ asset_id: 'rgb:test', ticker: 'TEST', name: 'Test' }], uda: null, cfa: [], ifa: null }) };
+  assert.deepEqual(await wallet.assets(), [{ assetId: 'rgb:test', ticker: 'TEST', name: 'Test', kind: 'nia' }]);
 });

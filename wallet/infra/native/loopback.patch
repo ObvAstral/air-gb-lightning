@@ -1,0 +1,37 @@
+diff --git a/src/main.rs b/src/main.rs
+index 7a147abe08f051a438b74d8ca1212b6492837239..6bf4824bd25f71dcf019b4e2cbed6d8a409ae010 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
+         .with(file_log.with_filter(filter::LevelFilter::DEBUG))
+         .init();
+ 
+-    let addr = SocketAddr::from(([0, 0, 0, 0], args.daemon_listening_port));
++    let addr = SocketAddr::from(([127, 0, 0, 1], args.daemon_listening_port));
+ 
+     let (router, app_state) = app(args).await?;
+ 
+@@ -233,7 +233,22 @@ pub(crate) async fn app(args: UserArgs) -> Result<(Router, Arc<AppState>), AppEr
+             app_state.clone(),
+             conditional_auth_middleware,
+         ))
+-        .layer(CorsLayer::permissive());
++        .layer(CorsLayer::new())
++        .layer(middleware::from_fn(
++            |request: Request<axum::body::Body>, next: middleware::Next| async move {
++                if let Ok(token) = std::env::var("AIRGB_RLN_TOKEN") {
++                    if request.headers().get("x-airgb-rln-token")
++                        .and_then(|value| value.to_str().ok()) != Some(token.as_str())
++                    {
++                        return Response::builder()
++                            .status(axum::http::StatusCode::FORBIDDEN)
++                            .body(axum::body::Body::empty())
++                            .unwrap();
++                    }
++                }
++                next.run(request).await
++            },
++        ));
+ 
+     #[cfg(test)]
+     let router = router.route("/test/timertick", post(crate::routes::test_timer_tick));

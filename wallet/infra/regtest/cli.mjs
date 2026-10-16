@@ -42,6 +42,7 @@ function help() {
   fund <alice|bob|issuer> <btc>
   mine [blocchi]
   utxos <alice|bob|issuer> [--count N --size sat --fee sat/vB]
+  issue <alice|bob> --ticker TICK --name Nome --amount <unità> [--precision 0]
   connect <alice|bob> [--peer pubkey@host:porta]
   channel <alice|bob> --capacity <sat> --asset <rgb:...> --amount <unità> [--peer ...]
   invoice <alice|bob> --asset <rgb:...> --amount <unità> [--msat 3000000] [--expiry 3600]
@@ -212,7 +213,7 @@ async function printNode(name) {
   const summary = await api('/api/wallet/summary');
   const assets = await api('/api/wallet/assets');
   const channels = await api('/api/wallet/channels');
-  if (!Array.isArray(assets) || !Array.isArray(channels)) throw new CliError('WDK_SHAPE', 'Risposta asset o canali non riconosciuta');
+  if (!Array.isArray(assets) || !Array.isArray(channels)) throw new CliError('RLN_SHAPE', 'Risposta asset o canali non riconosciuta');
   line('node', summary.nodeId);
   line('peer', summary.peerUri);
   line('indirizzo', summary.address);
@@ -313,6 +314,15 @@ async function connectNode(name, peer) {
   const api = await nodeSession(name);
   await api('/api/wallet/peers/connect', { peer: target });
   console.log(`${name} collegato a ${target}`);
+  await printNode(name);
+}
+
+async function issueNode(name, ticker, assetName, amount, precision) {
+  const api = await nodeSession(name);
+  const issued = await api('/api/wallet/rgb/issue', { ticker, name: assetName, precision, amounts: [amount] });
+  line('asset', issued.assetId);
+  line('ticker', issued.ticker);
+  line('supply', issued.issuedSupply);
   await printNode(name);
 }
 
@@ -646,6 +656,7 @@ async function main() {
   if (command === 'utxos' && target === 'issuer') return utxosIssuer(count, values.size === undefined ? 10000 : positiveInt(values.size, 'Dimensione UTXO'), fee);
   if (command === 'utxos') return utxosNode(nodeName(target), count, values.size === undefined ? 200000 : positiveInt(values.size, 'Dimensione UTXO'), fee);
   if (command === 'connect') return connectNode(nodeName(target), values.peer);
+  if (command === 'issue') return issueNode(nodeName(target), (values.ticker ?? '').toUpperCase(), values.name ?? '', positiveInt(values.amount, 'Importo'), values.precision === undefined ? 0 : nonNegativeInt(values.precision, 'Precisione'));
   if (command === 'channel') return channelNode(nodeName(target), String(positiveInt(values.capacity, 'Capacità')), requireAsset(values.asset), String(positiveInt(values.amount, 'Importo asset')), values.peer);
   if (command === 'invoice') return invoiceNode(nodeName(target), requireAsset(values.asset), positiveInt(values.amount, 'Importo asset'), values.msat === undefined ? 3000000 : positiveInt(values.msat, 'msat'), values.expiry === undefined ? 3600 : positiveInt(values.expiry, 'Scadenza'));
   if (command === 'pay') {

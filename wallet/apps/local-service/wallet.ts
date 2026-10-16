@@ -1,9 +1,8 @@
-import { mkdir, open, unlink, type FileHandle } from 'node:fs/promises';
+import { open, unlink, type FileHandle } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import WalletManagerRgbLightning, { type WalletAccountRgbLightning } from '@utexo/wdk-rgb-lightning';
 import { validNodeId } from '../../packages/policy/compile.js';
 import { VaultStore } from './vault.js';
-import { PersistentSignerError, PersistentWalletManager, prepareSignerStorage } from './persistent-signer.js';
+import { RlnAccount, RlnDaemon, RlnError, prepareRlnStorage } from './rln.js';
 
 export class WalletError extends Error { constructor(public code: string, message: string) { super(message); } }
 export type DecodedLightning = {
@@ -25,12 +24,12 @@ const safeNumber = (value: string, name: string): number => {
 };
 const records = (value: unknown, key: string): Record<string, unknown>[] => {
   const list = Array.isArray(value) ? value : object(value)[key];
-  if (!Array.isArray(list)) throw new WalletError('WDK_SHAPE', `Risposta WDK ${key} non riconosciuta`);
+  if (!Array.isArray(list)) throw new WalletError('RLN_SHAPE', `Risposta RLN ${key} non riconosciuta`);
   return list.map(object);
 };
 const stringField = (row: Record<string, unknown>, key: string): string | null => typeof row[key] === 'string' ? row[key] as string : null;
 const peerPort = (): number => {
-  const value = Number(process.env.AIRGB_LDK_PEER_PORT ?? '0');
+  const value = Number(process.env.AIRGB_LDK_PEER_PORT ?? '9735');
   if (!Number.isSafeInteger(value) || value < 0 || value > 65535) throw new WalletError('INVALID_PEER_PORT', 'Porta LDK non valida');
   return value;
 };
@@ -44,16 +43,12 @@ const MAX_NIA_NAME_LENGTH = 64;
 const MAX_NIA_PRECISION = 6;
 const MAX_NIA_ALLOCATIONS = 4;
 type NiaIssueRequest = { ticker: string; name: string; precision: number; amounts: number[] };
-type IssuingAccount = WalletAccountRgbLightning & {
-  issueAssetNia(request: NiaIssueRequest): Promise<unknown>;
-};
-
-export class WdkWallet {
+export class RgbWallet {
   readonly dataDir: string;
   readonly vault: VaultStore;
   readonly listeningPort: number;
-  private manager: WalletManagerRgbLightning | null = null;
-  private account: WalletAccountRgbLightning | null = null;
+  private daemon: RlnDaemon | null = null;
+  private account: RlnAccount | null = null;
   private starting: Promise<void> | null = null;
   private stopped = false;
   private lease: FileHandle | null = null;
@@ -62,21 +57,15 @@ export class WdkWallet {
     this.vault = new VaultStore(this.dataDir);
     this.listeningPort = peerPort();
   }
-  get ready(): boolean { return this.account !== null; }
+  get ready(): boolean { return this.account !== null && (this.daemon === null || this.daemon.running); }
   get canSend(): boolean { return this.ready && process.env.ENABLE_REGTEST_SEND === '1'; }
-  // beta.15 shuts the binding before the generic WDK dispose reads account.keyPair.
-  // That getter calls bootstrap on the already destroyed signer. The RGB Lightning
-  // account has no local secrets and its dispose is a no-op, so detach it first.
-  private disposeManager(manager: WalletManagerRgbLightning) {
-    (manager as unknown as { _accounts: Record<string, unknown> })._accounts = {};
-    manager.dispose();
-  }
   async state() { return { keystoreExists: await this.vault.exists(), node: this.ready ? 'ready' : 'locked', network: 'regtest', sendEnabled: this.canSend }; }
   async create(password: string, mnemonic?: string) { return { recoveryPhrase: await this.vault.create(password, mnemonic), state: await this.state() }; }
 
   async unlock(password: string): Promise<void> {
     if (this.stopped) throw new WalletError('STOPPED', 'Servizio wallet arrestato');
-    if (this.account) return;
+    if (this.ready) return;
+    if (this.daemon) throw new WalletError('RLN_EXITED', 'Daemon arrestato: riavviare il servizio per verificare e riaprire lo stato');
     if (this.starting) return this.starting;
     this.starting = this.start(password);
     try { await this.starting; } finally { this.starting = null; }
@@ -86,41 +75,45 @@ export class WdkWallet {
     const missing = required.filter(key => !process.env[key]);
     if (missing.length) throw new WalletError('REGTEST_CONFIG_MISSING', `Configurazione mancante: ${missing.join(', ')}`);
     const mnemonic = await this.vault.unlockMnemonic(password);
-    await mkdir(join(this.dataDir, 'wdk-rgb-lightning'), { recursive: true, mode: 0o700 });
-    const lockPath = join(this.dataDir, 'wdk-rgb-lightning.owner');
+    const storage = await prepareRlnStorage(this.dataDir);
+    const lockPath = join(this.dataDir, 'rgb-lightning-node.owner');
     let lease: FileHandle;
     try { lease = await open(lockPath, 'wx', 0o600); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new WalletError('NODE_ALREADY_OWNED', 'La directory del nodo è già aperta o richiede verifica dopo un arresto anomalo');
       throw error;
     }
-    let manager: WalletManagerRgbLightning | null = null;
+    const daemon = new RlnDaemon();
     try {
       await lease.writeFile(String(process.pid));
       const listeningPort = this.listeningPort;
-      await prepareSignerStorage(join(this.dataDir, 'wdk-rgb-lightning'));
-      manager = new PersistentWalletManager(mnemonic, { network: 'regtest', dataDir: join(this.dataDir, 'wdk-rgb-lightning'), nodeSeedDerivation: 'wdk-seed-v2', ldkPeerListeningPort: listeningPort });
-      const account = await manager.getAccount(0);
-      await account.unlock({
-        bitcoind_rpc_username: process.env.BITCOIND_RPC_USER,
-        bitcoind_rpc_password: process.env.BITCOIND_RPC_PASSWORD,
-        bitcoind_rpc_host: process.env.BITCOIND_RPC_HOST ?? '127.0.0.1',
-        bitcoind_rpc_port: Number(process.env.BITCOIND_RPC_PORT ?? 18443),
+      const client = await daemon.start(storage, listeningPort);
+      try { await client.request('init', { password, mnemonic }); }
+      catch (error) { if (!(error instanceof RlnError) || error.code !== 'AlreadyInitialized') throw error; }
+      await client.request('unlock', {
+        password,
+        ldk_chain_sync: { mode: 'BlockSync', config: {
+          bitcoind_rpc_username: process.env.BITCOIND_RPC_USER,
+          bitcoind_rpc_password: process.env.BITCOIND_RPC_PASSWORD,
+          bitcoind_rpc_host: process.env.BITCOIND_RPC_HOST ?? '127.0.0.1',
+          bitcoind_rpc_port: Number(process.env.BITCOIND_RPC_PORT ?? 18443),
+        } },
         indexer_url: process.env.INDEXER_URL,
-        proxy_endpoint: process.env.RGB_PROXY_ENDPOINT,
         announce_addresses: listeningPort ? [`${announceHost()}:${listeningPort}`] : [], announce_alias: 'AIR-GB-regtest',
       });
+      const account = new RlnAccount(client, process.env.RGB_PROXY_ENDPOINT!);
       const address = await account.getAddressState();
       if (address.status !== 'ready') throw new WalletError('NODE_LOCKED', 'Il nodo non è pronto');
-      this.manager = manager; this.account = account; this.lease = lease;
+      this.daemon = daemon; this.account = account; this.lease = lease;
     } catch (error) {
-      try { if (manager) this.disposeManager(manager); } finally { await lease.close(); await unlink(lockPath).catch(() => undefined); }
-      if (error instanceof PersistentSignerError) throw new WalletError(error.code, error.message);
+      await daemon.stop();
+      await lease.close(); await unlink(lockPath);
+      if (error instanceof RlnError) throw new WalletError(error.code, error.message);
       throw error;
     }
   }
-  private requireAccount(): WalletAccountRgbLightning {
-    if (!this.account) throw new WalletError('WALLET_LOCKED', 'Sbloccare il wallet locale');
+  private requireAccount(): RlnAccount {
+    if (!this.ready || !this.account) throw new WalletError('WALLET_LOCKED', 'Sbloccare il wallet locale');
     return this.account;
   }
   async summary() {
@@ -128,7 +121,8 @@ export class WdkWallet {
     const address = await account.getAddressState();
     if (address.status !== 'ready') throw new WalletError('WALLET_LOCKED', 'Account bloccato');
     const [btc, node, network] = await Promise.all([account.getBalance(), account.getNodeInfo(), account.getNetworkInfo()]);
-    const nodeId = Buffer.from(account.keyPair.publicKey).toString('hex');
+    const nodeId = stringField(object(node), 'pubkey');
+    if (!nodeId || !validNodeId(nodeId)) throw new WalletError('RLN_SHAPE', 'Pubkey del daemon non valida');
     const port = this.listeningPort;
     const host = announceHost();
     return { network: 'regtest', address: address.address, nodeId, peerUri: port ? `${nodeId}@${host}:${port}` : null, btcSpendableSat: btc.toString(), nodeInfo: object(node), networkInfo: object(network) };
@@ -159,15 +153,7 @@ export class WdkWallet {
     if (!Number.isSafeInteger(input.precision) || input.precision < 0 || input.precision > MAX_NIA_PRECISION) throw new WalletError('INVALID_ASSET', 'Precisione NIA: intero da 0 a 6');
     if (!Array.isArray(input.amounts) || input.amounts.length < 1 || input.amounts.length > MAX_NIA_ALLOCATIONS) throw new WalletError('INVALID_AMOUNT', 'Servono da 1 a 4 allocazioni');
     const amounts = input.amounts.map(amount => safeNumber(String(amount), 'Allocazione NIA'));
-    const account = this.requireAccount() as IssuingAccount;
-    let response: Record<string, unknown>;
-    try {
-      response = object(await account.issueAssetNia({ ticker: input.ticker, name, precision: input.precision, amounts }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (message.includes('UnsupportedInExternalSignerMode')) throw new WalletError('ISSUANCE_UNSUPPORTED', 'RLN non emette NIA con il signer esterno usato da questo nodo');
-      throw error;
-    }
+    const response = object(await this.requireAccount().issueAssetNia({ ticker: input.ticker, name, precision: input.precision, amounts }));
     const asset = object(response.asset);
     const assetId = stringField(asset, 'asset_id');
     if (!assetId?.startsWith('rgb:')) throw new WalletError('ISSUE_SHAPE', 'Risposta di emissione NIA non riconosciuta');
@@ -196,8 +182,8 @@ export class WdkWallet {
   async assets() {
     const source = await this.requireAccount().listAssets();
     const grouped = object(source);
-    const rows = ['nia', 'uda', 'cfa', 'ifa'].every(key => Array.isArray(grouped[key]))
-      ? ['nia', 'uda', 'cfa', 'ifa'].flatMap(kind => (grouped[kind] as unknown[]).map(value => ({ ...object(value), kind })))
+    const rows = ['nia', 'uda', 'cfa', 'ifa'].some(key => Object.hasOwn(grouped, key))
+      ? ['nia', 'uda', 'cfa', 'ifa'].flatMap(kind => records(grouped[kind] ?? [], kind).map(value => ({ ...value, kind })))
       : records(source, 'assets');
     return rows.map(row => ({ assetId: stringField(row, 'asset_id') ?? stringField(row, 'id'), ticker: stringField(row, 'ticker'), name: stringField(row, 'name'), kind: stringField(row, 'kind') }));
   }
@@ -286,15 +272,13 @@ export class WdkWallet {
     if (decoded.assetId) { request.asset_id = decoded.assetId; request.asset_amount = safeNumber(decoded.assetAmount!, 'Importo RGB'); }
     return object(await this.requireAccount().sendPayment(request));
   }
-  async paymentStatus(hash: string) { return object(await this.requireAccount().getPayment(hash, 'Outbound')); }
+  async paymentStatus(hash: string) { return object(await this.requireAccount().getPayment(hash)); }
   async shutdown() {
     this.stopped = true;
     if (this.starting) await this.starting.catch(() => undefined);
     const lease = this.lease;
-    try { if (this.manager) this.disposeManager(this.manager); }
-    finally {
-      this.manager = null; this.account = null; this.lease = null;
-      if (lease) { await lease.close(); await unlink(join(this.dataDir, 'wdk-rgb-lightning.owner')); }
-    }
+    await this.daemon?.stop();
+    this.daemon = null; this.account = null; this.lease = null;
+    if (lease) { await lease.close(); await unlink(join(this.dataDir, 'rgb-lightning-node.owner')); }
   }
 }

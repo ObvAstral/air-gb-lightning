@@ -27,8 +27,10 @@ const ensureAddon = node => {
   const wrap = join(directory, 'swig_wrap.cxx');
   const source = readFileSync(wrap, 'utf8');
   const addon = join(directory, 'build/Release/rgblib.node');
-  if (source.includes('args.Holder()')) {
-    writeFileSync(wrap, source.replaceAll('args.Holder()', 'args.This()'));
+  const fixed = source.replaceAll('args.Holder()', 'args.This()')
+    .replaceAll('->SetAccessor(', '->SetNativeDataProperty(');
+  if (fixed !== source) {
+    writeFileSync(wrap, fixed);
     rmSync(addon, { force: true });
   }
   if (existsSync(addon)) return;

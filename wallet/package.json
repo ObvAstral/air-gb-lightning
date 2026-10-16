@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test packages/policy/*.test.ts apps/local-service/*.test.ts",
     "test:rgb": "node infra/regtest/run-rgb.mjs",
+    "test:mpp": "npm run native:build && node --env-file=native-data/regtest/wallet.env --import tsx infra/regtest/e2e-mpp.mjs",
     "cli": "node --env-file=native-data/regtest/wallet.env --import tsx infra/regtest/cli.mjs",
     "native:build": "node infra/native/build.mjs",
     "qvac:doctor": "qvac doctor",

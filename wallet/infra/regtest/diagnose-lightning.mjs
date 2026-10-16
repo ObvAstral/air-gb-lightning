@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WdkWallet } from '../../apps/local-service/wallet.ts';
+import { RgbWallet } from '../../apps/local-service/wallet.ts';
 import { PaymentStore } from '../../apps/local-service/payments.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -10,10 +10,10 @@ const secrets = JSON.parse(await readFile(join(dir, 'test-passwords.json'), 'utf
 let a, b, payments;
 try {
   process.env.AIRGB_LDK_PEER_PORT = '9745';
-  a = new WdkWallet(join(dir, 'a'));
+  a = new RgbWallet(join(dir, 'a'));
   await a.unlock(secrets.a);
   process.env.AIRGB_LDK_PEER_PORT = '9746';
-  b = new WdkWallet(join(dir, 'b'));
+  b = new RgbWallet(join(dir, 'b'));
   await b.unlock(secrets.b);
   const bPeer = (await b.summary()).peerUri;
   await a.connectPeer(bPeer);

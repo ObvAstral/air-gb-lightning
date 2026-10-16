@@ -30,7 +30,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
   alice:
-    image: airgb-regtest-node
+    image: airgb-regtest-node-mpp
     build:
       context: ./wallet
       dockerfile: Dockerfile
@@ -56,9 +56,9 @@ services:
       - "127.0.0.1:8787:8787"
       - "127.0.0.1:9735:9735"
     volumes:
-      - alice-data:/data
+      - alice-mpp-data:/data
   bob:
-    image: airgb-regtest-node
+    image: airgb-regtest-node-mpp
     build:
       context: ./wallet
       dockerfile: Dockerfile
@@ -75,9 +75,12 @@ services:
       - "127.0.0.1:8788:8788"
       - "127.0.0.1:9736:9736"
     volumes:
-      - bob-data:/data
+      - bob-mpp-data:/data
 volumes:
   bitcoin-data:
   electrs-data:
   alice-data:
   bob-data:
+  # Separate state: the fork uses its internal signer instead of UTEXO/VLS.
+  alice-mpp-data:
+  bob-mpp-data:

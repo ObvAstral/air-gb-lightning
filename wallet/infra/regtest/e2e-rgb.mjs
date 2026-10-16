@@ -4,7 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { generateMnemonic } from 'bip39';
 import WalletManagerRgb from '@utexo/wdk-wallet-rgb';
-import { WdkWallet } from '../../apps/local-service/wallet.ts';
+import { RgbWallet } from '../../apps/local-service/wallet.ts';
 import { PaymentStore } from '../../apps/local-service/payments.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -44,7 +44,7 @@ const assetIdOf = issued => {
 const openWallet = async (name, port) => {
   process.env.AIRGB_LDK_PEER_PORT = String(port);
   process.env.AIRGB_ANNOUNCE_HOST = '127.0.0.1';
-  const wallet = new WdkWallet(join(directory, name));
+  const wallet = new RgbWallet(join(directory, name));
   if (!(await wallet.vault.exists())) await wallet.create(secrets[name]);
   await wallet.unlock(secrets[name]);
   return wallet;
@@ -215,12 +215,17 @@ try {
     await pause(500);
     receiver = await b.invoiceStatus(invoice.invoice);
   }
-  const channel = (await a.channels()).find(item => item.assetId === assetId);
+  let channel;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    channel = (await a.channels()).find(item => item.assetId === assetId);
+    if (channel?.assetLocalAmount === '90' || sent.status !== 'succeeded') break;
+    await pause(1000);
+  }
   report.rgb = sent.status;
   process.stdout.write(JSON.stringify({ step: 'rgb_payment', status: sent.status, receiverStatus: receiver, failureCode: native.failure_code ?? null, assetLocalAmount: channel?.assetLocalAmount ?? null }) + '\n');
   if (sent.status !== 'succeeded' || receiver.status !== 'Succeeded') throw new Error(`Pagamento RGB non riuscito: ${sent.status}/${receiver.status}`);
   if (native.asset_id !== assetId) throw new Error('Il pagamento nativo non riporta l\'asset emesso');
-  if (channel?.assetLocalAmount == null || BigInt(channel.assetLocalAmount) >= 100n) throw new Error('Il saldo RGB locale del canale non è diminuito');
+  if (channel?.assetLocalAmount !== '90') throw new Error(`Saldo RGB locale dopo il pagamento inatteso: ${channel?.assetLocalAmount ?? 'assente'}, atteso 90`);
 } finally {
   process.stdout.write(JSON.stringify({ step: 'report', ...report }) + '\n');
   payments?.close();

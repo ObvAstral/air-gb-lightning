@@ -55,7 +55,7 @@ export function compileConstraints(args: {
   };
   if (extracted.privacyRequest === 'unspecified') return fail('needs_clarification', 'INVALID_EXTRACTION', ['Precisare quale misura di privacy si desidera'], normalized);
   const missing: string[] = [];
-  if (capabilities.backendVersion === 'not-connected') missing.push('decodifica canonica e verifica del pagamento WDK');
+  if (capabilities.backendVersion === 'not-connected') missing.push('decodifica canonica e verifica del pagamento nel nodo RGB');
   const retries = capabilities.canGuaranteeConstraintsAcrossRetries;
   if (fee !== null && (!capabilities.hardFeeCap || !retries)) missing.push('budget fee garantito anche nei retry');
   if (nodes.length && (!capabilities.hardNodeExclusion || !retries)) missing.push('esclusione nodi garantita anche nei retry');

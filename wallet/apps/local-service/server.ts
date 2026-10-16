@@ -5,7 +5,9 @@ import schema from '../../packages/contracts/extracted.schema.json' with { type:
 import type { ExtractedConstraints, PaymentDraft, RoutingCapabilities } from '../../packages/contracts/types.js';
 import { compileConstraints } from '../../packages/policy/compile.js';
 import { interpretWithQvac, InterpretationError } from './interpret.js';
-import { WdkWallet, WalletError } from './wallet.js';
+import { RgbWallet, WalletError } from './wallet.js';
+import { RlnError } from './rln.js';
+import sourceLock from '../../infra/native/source-lock.json' with { type: 'json' };
 import { PaymentStore } from './payments.js';
 import { VaultError } from './vault.js';
 import { chainHeight, mineBlocks } from './chain.js';
@@ -14,10 +16,10 @@ const port = Number(process.env.PORT ?? 8787);
 const bindHost = process.env.BIND_HOST ?? '127.0.0.1';
 if (bindHost !== '127.0.0.1' && bindHost !== '0.0.0.0') throw new Error('BIND_HOST deve essere 127.0.0.1 oppure 0.0.0.0');
 const token = randomBytes(32).toString('hex');
-const wallet = new WdkWallet();
+const wallet = new RgbWallet();
 const payments = new PaymentStore(wallet.dataDir, wallet);
 const capabilities: RoutingCapabilities = Object.freeze({
-  backendVersion: 'wdk-rgb-lightning-beta.15/native-beta.16+signer-0fb005e', revision: 'native-routing-unverified-1', hardFeeCap: false,
+  backendVersion: `ObvAstral/rgb-lightning-node@${sourceLock.node.commit.slice(0, 12)}/rust-lightning@${sourceLock.lightning.commit.slice(0, 12)}`, revision: 'rgb-mpp-1', hardFeeCap: false,
   hardNodeExclusion: false, hardChannelExclusion: false, perPaymentScoringProfile: false,
   avoidExtraProbing: false, canInspectFullRoute: false, canGuaranteeConstraintsAcrossRetries: false,
 });
@@ -43,7 +45,7 @@ const server = createServer(async (req, res) => {
   if (req.headers.origin && !allowedOrigins.has(req.headers.origin)) return json(res, 403, { code: 'BAD_ORIGIN' });
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const path = new URL(req.url ?? '/', `http://${host}`).pathname;
-  if (req.method === 'GET' && path === '/api/health') return json(res, 200, { api: 'ready', wdk: wallet.ready ? 'ready' : 'locked', qvac: process.env.QVAC_MODEL ? 'configured_unverified' : 'not_configured', network: 'regtest' });
+  if (req.method === 'GET' && path === '/api/health') return json(res, 200, { api: 'ready', rln: wallet.ready ? 'ready' : 'locked', qvac: process.env.QVAC_MODEL ? 'configured_unverified' : 'not_configured', network: 'regtest' });
   if (req.method === 'GET' && path === '/api/routing/capabilities') return json(res, 200, capabilities);
   if (req.method === 'GET' && path === '/api/session') return json(res, 200, { token });
   if (req.headers['x-session-token'] !== token || (req.headers.origin && !allowedOrigins.has(req.headers.origin)) || (req.method === 'POST' && !req.headers.origin)) return json(res, 403, { code: 'SESSION_REQUIRED' });
@@ -60,10 +62,10 @@ const server = createServer(async (req, res) => {
         return assetId ? json(res, 200, await wallet.assetBalance(assetId)) : json(res, 400, { code: 'INVALID_ASSET' });
       }
       if (path === '/api/wallet/history') return json(res, 200, await wallet.history());
-      if (path === '/api/wallet/history/bitcoin') return json(res, 200, { source: 'wdk-bitcoin', data: await wallet.bitcoinHistory() });
+      if (path === '/api/wallet/history/bitcoin') return json(res, 200, { source: 'rln-bitcoin', data: await wallet.bitcoinHistory() });
       if (path === '/api/wallet/history/rgb') {
         const assetId = new URL(req.url ?? '/', `http://${host}`).searchParams.get('assetId');
-        return assetId ? json(res, 200, { source: 'wdk-rgb', assetId, data: await wallet.rgbTransfers(assetId) }) : json(res, 400, { code: 'INVALID_ASSET' });
+        return assetId ? json(res, 200, { source: 'rln-rgb', assetId, data: await wallet.rgbTransfers(assetId) }) : json(res, 400, { code: 'INVALID_ASSET' });
       }
       if (path === '/api/chain/status') return json(res, 200, { height: await chainHeight() });
       if (path === '/api/payments') return json(res, 200, wallet.ready ? await payments.listReconciled() : payments.list());
@@ -125,7 +127,7 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/wallet/receive/lightning/status') {
       if (typeof body.invoice !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
-      return json(res, 200, { source: 'wdk-lightning', data: await wallet.invoiceStatus(body.invoice) });
+      return json(res, 200, { source: 'rln-lightning', data: await wallet.invoiceStatus(body.invoice) });
     }
     if (path === '/api/payments/prepare') {
       if (typeof body.id !== 'string' || typeof body.invoice !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
@@ -151,10 +153,10 @@ const server = createServer(async (req, res) => {
     const canonical: PaymentDraft = { invoice: decoded.invoice, amount, assetId: decoded.assetId ?? 'BTC', network: decoded.network };
     return json(res, 200, compileConstraints({ extracted: body.extracted, payment: canonical, capabilities, payeePubkey: decoded.payeePubkey }));
   } catch (error) {
-    if (error instanceof WalletError || error instanceof VaultError) return json(res, 422, { code: error.code, message: error.message });
+    if (error instanceof WalletError || error instanceof VaultError || error instanceof RlnError) return json(res, 422, { code: error.code, message: error.message });
     if (error instanceof InterpretationError) return json(res, 422, { code: error.code, message: error.message });
     if (error instanceof SyntaxError) return json(res, 400, { code: 'INVALID_JSON' });
-    return json(res, 503, { code: 'WDK_UNAVAILABLE', message: 'Operazione WDK non disponibile; verificare i servizi regtest e il log locale' });
+    return json(res, 503, { code: 'RLN_UNAVAILABLE', message: 'Operazione RLN non disponibile; verificare i servizi regtest e il log locale' });
   }
 });
 server.listen(port, bindHost, () => console.log(`AIR-GB local service: http://127.0.0.1:${port}`));
@@ -163,7 +165,7 @@ const stop = () => {
   if (stopping) return;
   stopping = true;
   void wallet.shutdown().catch(error => {
-    console.error('Shutdown WDK non riuscito:', error instanceof Error ? error.message : 'errore sconosciuto');
+    console.error('Shutdown RLN non riuscito:', error instanceof Error ? error.message : 'errore sconosciuto');
     process.exitCode = 1;
   }).finally(() => { payments.close(); server.close(); });
 };

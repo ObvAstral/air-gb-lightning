@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { WdkWallet } from '../../apps/local-service/wallet.ts';
+import { RgbWallet } from '../../apps/local-service/wallet.ts';
 import { PaymentStore } from '../../apps/local-service/payments.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -29,7 +29,7 @@ const rpc = async (method, params = [], wallet = '') => {
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const openWallet = async (name, port) => {
   process.env.AIRGB_LDK_PEER_PORT = String(port);
-  const wallet = new WdkWallet(join(directory, name));
+  const wallet = new RgbWallet(join(directory, name));
   if (!(await wallet.vault.exists())) await wallet.create(secrets[name]);
   await wallet.unlock(secrets[name]);
   return wallet;
