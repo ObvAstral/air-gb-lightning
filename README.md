@@ -23,6 +23,15 @@ daemon port exposed by the containers is the Lightning P2P port. The
 `wallet/native-data/runtime/bin/build.json` manifest verifies sources, patches, platform,
 and binary hash, including at startup. MPP splitting is handled by the daemon.
 
+## AI Aspects
+
+The project integrates **QVAC** as an embedded local AI model to optimize and enhance payment routing across the Lightning Network and RGB channels. These AI capabilities encompass four core features:
+
+- **Natural Language Constraint Interpretation**: Translates user payment preferences expressed in plain language (e.g., avoiding specific nodes, setting maximum fee budgets, or prioritizing privacy over cost) into structured routing constraints, penalties, and mandatory node/channel exclusions.
+- **Intelligent Channel Scoring**: Augments LDK's `ProbabilisticScorer` by factoring in historical payment success and failure rates, transaction amounts, user preferences, and real-time network topology to dynamically assess channel reliability.
+- **Dynamic Routing Algorithm Selection**: Analyzes payment sizes and network conditions to choose the most effective routing strategy—dynamically selecting between standard LDK Dijkstra, K-shortest paths, and Min-Cost Flow optimization.
+- **Multi-Path Payment (MPP) Optimization**: Coordinates Multi-Path Payments by determining when splitting is advantageous, computing the optimal number of routes, and distributing amounts across channels to balance fee efficiency and delivery reliability for both Bitcoin and RGB assets.
+
 ## Requirements
 
 - Node `24.19.0` and npm.
