@@ -8,8 +8,11 @@ import { interpretWithQvac, InterpretationError } from './interpret.js';
 import { WdkWallet, WalletError } from './wallet.js';
 import { PaymentStore } from './payments.js';
 import { VaultError } from './vault.js';
+import { chainHeight, mineBlocks } from './chain.js';
 
 const port = Number(process.env.PORT ?? 8787);
+const bindHost = process.env.BIND_HOST ?? '127.0.0.1';
+if (bindHost !== '127.0.0.1' && bindHost !== '0.0.0.0') throw new Error('BIND_HOST deve essere 127.0.0.1 oppure 0.0.0.0');
 const token = randomBytes(32).toString('hex');
 const wallet = new WdkWallet();
 const payments = new PaymentStore(wallet.dataDir, wallet);
@@ -25,10 +28,20 @@ const json = (res: import('node:http').ServerResponse, status: number, data: unk
 };
 const webPort = Number(process.env.AIRGB_WEB_PORT ?? 5173);
 const allowedOrigins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, `http://127.0.0.1:${webPort}`, `http://localhost:${webPort}`]);
+const applyCors = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {
+  const origin = req.headers.origin;
+  if (typeof origin !== 'string' || !allowedOrigins.has(origin)) return;
+  res.setHeader('access-control-allow-origin', origin);
+  res.setHeader('access-control-allow-headers', 'content-type, x-session-token');
+  res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+  res.setHeader('vary', 'Origin');
+};
 const server = createServer(async (req, res) => {
   const host = req.headers.host;
+  applyCors(req, res);
   if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return json(res, 403, { code: 'BAD_HOST' });
   if (req.headers.origin && !allowedOrigins.has(req.headers.origin)) return json(res, 403, { code: 'BAD_ORIGIN' });
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const path = new URL(req.url ?? '/', `http://${host}`).pathname;
   if (req.method === 'GET' && path === '/api/health') return json(res, 200, { api: 'ready', wdk: wallet.ready ? 'ready' : 'locked', qvac: process.env.QVAC_MODEL ? 'configured_unverified' : 'not_configured', network: 'regtest' });
   if (req.method === 'GET' && path === '/api/routing/capabilities') return json(res, 200, capabilities);
@@ -52,6 +65,7 @@ const server = createServer(async (req, res) => {
         const assetId = new URL(req.url ?? '/', `http://${host}`).searchParams.get('assetId');
         return assetId ? json(res, 200, { source: 'wdk-rgb', assetId, data: await wallet.rgbTransfers(assetId) }) : json(res, 400, { code: 'INVALID_ASSET' });
       }
+      if (path === '/api/chain/status') return json(res, 200, { height: await chainHeight() });
       if (path === '/api/payments') return json(res, 200, wallet.ready ? await payments.listReconciled() : payments.list());
       if (path.startsWith('/api/payments/')) {
         const id = path.slice('/api/payments/'.length);
@@ -76,6 +90,14 @@ const server = createServer(async (req, res) => {
     if (path === '/api/wallet/sync') {
       await wallet.refresh();
       return json(res, 200, { synced: true });
+    }
+    if (path === '/api/chain/mine') {
+      if (typeof body.blocks !== 'number') return json(res, 400, { code: 'INVALID_INPUT' });
+      return json(res, 200, await mineBlocks(body.blocks));
+    }
+    if (path === '/api/wallet/rgb/issue') {
+      if (typeof body.ticker !== 'string' || typeof body.name !== 'string' || typeof body.precision !== 'number' || !Array.isArray(body.amounts) || body.amounts.some(amount => typeof amount !== 'number')) return json(res, 400, { code: 'INVALID_INPUT' });
+      return json(res, 200, await wallet.issueNia({ ticker: body.ticker, name: body.name, precision: body.precision, amounts: body.amounts as number[] }));
     }
     if (path === '/api/wallet/rgb/utxos') {
       if (typeof body.count !== 'number' || typeof body.sizeSat !== 'string' || typeof body.feeRateSatPerVbyte !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
@@ -135,7 +157,7 @@ const server = createServer(async (req, res) => {
     return json(res, 503, { code: 'WDK_UNAVAILABLE', message: 'Operazione WDK non disponibile; verificare i servizi regtest e il log locale' });
   }
 });
-server.listen(port, '127.0.0.1', () => console.log(`AIR-GB local service: http://127.0.0.1:${port}`));
+server.listen(port, bindHost, () => console.log(`AIR-GB local service: http://127.0.0.1:${port}`));
 let stopping = false;
 const stop = () => {
   if (stopping) return;

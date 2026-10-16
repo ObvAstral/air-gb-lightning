@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { CompileResult, ExtractedConstraints, PaymentDraft } from '../../../packages/contracts/types.js';
 import './style.css';
-import { WalletPanel } from './WalletPanel.js';
+import { ChainControls } from './components/ChainControls.js';
+import { PaymentPanel } from './components/PaymentPanel.js';
+import { WalletCard } from './components/WalletCard.js';
+import { ALICE_BASE_URL, BOB_BASE_URL } from './components/node-client.js';
 
 const initial: ExtractedConstraints = { schemaVersion: '1.0', status: 'parsed', feeLimit: null, excludedNodeReferences: [], priority: null, privacyRequest: null, unhandledRequests: [] };
 function App() {
@@ -34,7 +37,11 @@ function App() {
   }
   return <main>
     <header><div><p className="eyebrow">AIR-GB · REGTEST</p><h1>Wallet RGB Lightning</h1><p>Nodo locale WDK, pagamenti di test e anteprima dei vincoli.</p></div><div className="status">API: {health.api ?? 'offline'}<br/>WDK: {health.wdk ?? 'sconosciuto'}<br/>QVAC: {health.qvac ?? 'sconosciuto'}</div></header>
-    <WalletPanel token={token} />
+    <ChainControls />
+    <div className="nodes">
+      <div><WalletCard label="Alice" baseUrl={ALICE_BASE_URL} /><PaymentPanel label="Alice" baseUrl={ALICE_BASE_URL} /></div>
+      <div><WalletCard label="Bob" baseUrl={BOB_BASE_URL} /><PaymentPanel label="Bob" baseUrl={BOB_BASE_URL} /></div>
+    </div>
     <section><h2>1. Pagamento di riferimento</h2><p>Il servizio decodifica la invoice con WDK e verifica importo, asset e rete prima di mostrare l’anteprima. Questo modulo non invia pagamenti.</p>
       <label>Invoice di test<input value={payment.invoice} onChange={e => editPayment('invoice', e.target.value)} placeholder="Invoice regtest" /></label>
       <div className="row"><label>Importo Lightning in msat<input value={payment.amount} onChange={e => editPayment('amount', e.target.value)} inputMode="numeric" placeholder="10000" /></label><label>Contract ID RGB / BTC<input value={payment.assetId} onChange={e => editPayment('assetId', e.target.value)} /></label></div>

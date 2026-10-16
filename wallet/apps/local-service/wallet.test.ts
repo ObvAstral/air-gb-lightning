@@ -41,13 +41,14 @@ test('canali normalizzano liquidità direzionale e importi RGB del binding nativ
     channel_id: 'channel-test', peer_pubkey: 'peer-test', capacity_sat: '150000',
     outbound_balance_msat: '142840000', inbound_balance_msat: 0,
     asset_id: 'rgb:test', asset_local_amount: '10000', asset_remote_amount: '0',
-    is_usable: true, public: false,
+    is_usable: true, public: false, funding_txid: 'ab'.repeat(32),
   }] };
   const [channel] = await wallet.channels();
   assert.equal(channel.outboundMsat, '142840000');
   assert.equal(channel.inboundMsat, '0');
   assert.equal(channel.assetLocalAmount, '10000');
   assert.equal(channel.assetRemoteAmount, '0');
+  assert.equal(channel.fundingTxid, 'ab'.repeat(32));
 });
 
 test('il signer persistente rifiuta stato nativo precedente privo di stato VLS', async () => {
@@ -86,4 +87,47 @@ test('parametri UTXO invalidi bloccano la mutazione nativa', async () => {
   assert.equal(calls, 0);
   assert.equal((await wallet.prepareRgbUtxos(valid)).status, 'requested');
   assert.equal(calls, 1);
+});
+
+test('UTXO RGB già presenti non sono un errore', async () => {
+  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-rgb-utxos-ready'));
+  (wallet as unknown as { account: unknown }).account = { createUtxos: async () => { throw new Error('Rln(Conflict): Allocations already available'); } };
+  assert.deepEqual(await wallet.prepareRgbUtxos({ count: 4, sizeSat: '200000', feeRateSatPerVbyte: '2' }), { status: 'ready', confirmationRequired: false });
+});
+
+test('issueNia rifiuta input invalidi e inoltra il body NIA valido', async () => {
+  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-issue'));
+  let calls = 0;
+  let request: unknown;
+  (wallet as unknown as { account: unknown }).account = {
+    issueAssetNia: async (body: unknown) => {
+      calls++;
+      request = body;
+      return { asset: { asset_id: 'rgb:test-asset', issued_supply: 1000 } };
+    },
+    sync: async () => undefined,
+    refreshTransfers: async () => undefined,
+  };
+  const valid = { ticker: 'DEMO', name: 'Demo', precision: 0, amounts: [1000] };
+  for (const invalid of [
+    { ...valid, ticker: 'd' },
+    { ...valid, name: 'riga\nrotta' },
+    { ...valid, precision: 7 },
+    { ...valid, amounts: [] },
+    { ...valid, amounts: [0] },
+  ]) await assert.rejects(wallet.issueNia(invalid));
+  assert.equal(calls, 0);
+  const issued = await wallet.issueNia(valid);
+  assert.equal(calls, 1);
+  assert.deepEqual(request, valid);
+  assert.equal(issued.assetId, 'rgb:test-asset');
+  assert.equal(issued.issuedSupply, '1000');
+});
+
+test('issueNia traduce il rifiuto del signer esterno', async () => {
+  const wallet = new WdkWallet(join(tmpdir(), 'airgb-unused-issue-signer'));
+  (wallet as unknown as { account: unknown }).account = {
+    issueAssetNia: async () => { throw new Error('Rln(UnsupportedInExternalSignerMode): asset issuance is not supported in external signer mode'); },
+  };
+  await assert.rejects(wallet.issueNia({ ticker: 'DEMO', name: 'Demo', precision: 0, amounts: [1000] }), { code: 'ISSUANCE_UNSUPPORTED' });
 });

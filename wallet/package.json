@@ -10,9 +10,12 @@
     "dev": "npm run native:build && concurrently -k \"npm run dev -w @airgb/service\" \"npm run dev -w @airgb/web\"",
     "dev:regtest": "npm run native:build && concurrently -k \"npm run dev:regtest -w @airgb/service\" \"npm run dev -w @airgb/web\"",
     "dev:peer": "npm run native:build && node infra/regtest/run-peer.mjs",
+    "dev:ui": "npm run dev -w @airgb/web",
     "build": "npm run build -w @airgb/web",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test packages/policy/*.test.ts apps/local-service/*.test.ts",
+    "test:rgb": "node infra/regtest/run-rgb.mjs",
+    "cli": "node --env-file=native-data/regtest/wallet.env --import tsx infra/regtest/cli.mjs",
     "native:build": "node infra/native/build.mjs",
     "qvac:doctor": "qvac doctor",
     "qvac:precache": "node scripts/qvac-precache.mjs",
@@ -21,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "24.5.2",
+    "@utexo/wdk-wallet-rgb": "2.0.3",
     "concurrently": "9.2.5",
     "tsx": "4.20.6",
     "typescript": "5.9.3"

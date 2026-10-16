@@ -1,0 +1,7 @@
+node_modules
+native-data
+dist
+*.log
+*.sqlite
+*.sqlite3
+*.db

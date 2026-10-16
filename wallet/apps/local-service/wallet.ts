@@ -34,6 +34,19 @@ const peerPort = (): number => {
   if (!Number.isSafeInteger(value) || value < 0 || value > 65535) throw new WalletError('INVALID_PEER_PORT', 'Porta LDK non valida');
   return value;
 };
+const announceHost = (): string => {
+  const host = process.env.AIRGB_ANNOUNCE_HOST ?? '127.0.0.1';
+  if (!/^[a-zA-Z0-9.-]{1,253}$/.test(host)) throw new WalletError('INVALID_ANNOUNCE_HOST', 'Host di announce non valido');
+  return host;
+};
+const NIA_TICKER = /^[A-Z][A-Z0-9]{1,7}$/;
+const MAX_NIA_NAME_LENGTH = 64;
+const MAX_NIA_PRECISION = 6;
+const MAX_NIA_ALLOCATIONS = 4;
+type NiaIssueRequest = { ticker: string; name: string; precision: number; amounts: number[] };
+type IssuingAccount = WalletAccountRgbLightning & {
+  issueAssetNia(request: NiaIssueRequest): Promise<unknown>;
+};
 
 export class WdkWallet {
   readonly dataDir: string;
@@ -95,7 +108,7 @@ export class WdkWallet {
         bitcoind_rpc_port: Number(process.env.BITCOIND_RPC_PORT ?? 18443),
         indexer_url: process.env.INDEXER_URL,
         proxy_endpoint: process.env.RGB_PROXY_ENDPOINT,
-        announce_addresses: listeningPort ? [`127.0.0.1:${listeningPort}`] : [], announce_alias: 'AIR-GB-regtest',
+        announce_addresses: listeningPort ? [`${announceHost()}:${listeningPort}`] : [], announce_alias: 'AIR-GB-regtest',
       });
       const address = await account.getAddressState();
       if (address.status !== 'ready') throw new WalletError('NODE_LOCKED', 'Il nodo non è pronto');
@@ -117,7 +130,8 @@ export class WdkWallet {
     const [btc, node, network] = await Promise.all([account.getBalance(), account.getNodeInfo(), account.getNetworkInfo()]);
     const nodeId = Buffer.from(account.keyPair.publicKey).toString('hex');
     const port = this.listeningPort;
-    return { network: 'regtest', address: address.address, nodeId, peerUri: port ? `${nodeId}@127.0.0.1:${port}` : null, btcSpendableSat: btc.toString(), nodeInfo: object(node), networkInfo: object(network) };
+    const host = announceHost();
+    return { network: 'regtest', address: address.address, nodeId, peerUri: port ? `${nodeId}@${host}:${port}` : null, btcSpendableSat: btc.toString(), nodeInfo: object(node), networkInfo: object(network) };
   }
   async sync() { await this.requireAccount().sync(); }
   async refresh() {
@@ -129,8 +143,38 @@ export class WdkWallet {
     const size = safeNumber(input.sizeSat, 'Dimensione UTXO in sat');
     const feeRate = safeNumber(input.feeRateSatPerVbyte, 'Fee in sat/vB');
     if (size < 10000 || size > 1000000 || feeRate > 100) throw new WalletError('INVALID_UTXO_PARAMETERS', 'Dimensione UTXO: 10000–1000000 sat; fee: 1–100 sat/vB');
-    await this.requireAccount().createUtxos({ up_to: true, num: input.count, size, fee_rate: feeRate, skip_sync: false });
+    try {
+      await this.requireAccount().createUtxos({ up_to: true, num: input.count, size, fee_rate: feeRate, skip_sync: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('Allocations already available')) return { status: 'ready', confirmationRequired: false };
+      throw error;
+    }
     return { status: 'requested', confirmationRequired: true };
+  }
+  async issueNia(input: NiaIssueRequest) {
+    const name = input.name.trim();
+    if (!NIA_TICKER.test(input.ticker)) throw new WalletError('INVALID_ASSET', 'Ticker NIA: 2–8 caratteri, inizia con una lettera maiuscola');
+    if (name.length < 1 || name.length > MAX_NIA_NAME_LENGTH || /[\r\n]/.test(name)) throw new WalletError('INVALID_ASSET', 'Nome NIA: 1–64 caratteri, una sola riga');
+    if (!Number.isSafeInteger(input.precision) || input.precision < 0 || input.precision > MAX_NIA_PRECISION) throw new WalletError('INVALID_ASSET', 'Precisione NIA: intero da 0 a 6');
+    if (!Array.isArray(input.amounts) || input.amounts.length < 1 || input.amounts.length > MAX_NIA_ALLOCATIONS) throw new WalletError('INVALID_AMOUNT', 'Servono da 1 a 4 allocazioni');
+    const amounts = input.amounts.map(amount => safeNumber(String(amount), 'Allocazione NIA'));
+    const account = this.requireAccount() as IssuingAccount;
+    let response: Record<string, unknown>;
+    try {
+      response = object(await account.issueAssetNia({ ticker: input.ticker, name, precision: input.precision, amounts }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('UnsupportedInExternalSignerMode')) throw new WalletError('ISSUANCE_UNSUPPORTED', 'RLN non emette NIA con il signer esterno usato da questo nodo');
+      throw error;
+    }
+    const asset = object(response.asset);
+    const assetId = stringField(asset, 'asset_id');
+    if (!assetId?.startsWith('rgb:')) throw new WalletError('ISSUE_SHAPE', 'Risposta di emissione NIA non riconosciuta');
+    const issuedSupply = positiveInteger(asset.issued_supply);
+    if (issuedSupply === null) throw new WalletError('ISSUE_SHAPE', 'Supply emessa non riconosciuta');
+    await this.refresh();
+    return { assetId, ticker: input.ticker, name, precision: input.precision, issuedSupply: issuedSupply.toString() };
   }
   async channels() {
     const source = await this.requireAccount().listChannels();
@@ -142,6 +186,7 @@ export class WdkWallet {
       assetLocalAmount: positiveInteger(row.asset_local_amount)?.toString() ?? null,
       assetRemoteAmount: positiveInteger(row.asset_remote_amount)?.toString() ?? null,
       isUsable: typeof row.is_usable === 'boolean' ? row.is_usable : null,
+      fundingTxid: stringField(row, 'funding_txid'),
       public: typeof row.public === 'boolean' ? row.public : null,
     }));
   }

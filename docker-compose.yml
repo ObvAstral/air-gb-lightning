@@ -1,0 +1,83 @@
+name: airgb-regtest
+services:
+  bitcoind:
+    image: registry.gitlab.com/hashbeam/docker/bitcoind:30.2
+    command: >-
+      -fallbackfee=0.0002
+      -rpcuser=user
+      -rpcpassword=${BITCOIND_RPC_PASSWORD:?Set BITCOIND_RPC_PASSWORD locally}
+    environment:
+      MYUID: ${AIRGB_UID:-1000}
+      MYGID: ${AIRGB_GID:-1000}
+    ports:
+      - "127.0.0.1:18443:18443"
+    volumes:
+      - bitcoin-data:/srv/app/.bitcoin
+  electrs:
+    image: registry.gitlab.com/hashbeam/docker/electrs:0.11.0
+    environment:
+      MYUID: ${AIRGB_UID:-1000}
+      MYGID: ${AIRGB_GID:-1000}
+      BTCPASS: ${BITCOIND_RPC_PASSWORD:?Set BITCOIND_RPC_PASSWORD locally}
+    depends_on:
+      - bitcoind
+    ports:
+      - "127.0.0.1:50001:50001"
+    volumes:
+      - electrs-data:/srv/app/db
+  proxy:
+    image: ghcr.io/rgb-tools/rgb-proxy-server:0.3.0
+    ports:
+      - "127.0.0.1:3000:3000"
+  alice:
+    image: airgb-regtest-node
+    build:
+      context: ./wallet
+      dockerfile: Dockerfile
+    environment: &node-env
+      BITCOIND_RPC_USER: user
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:?Set BITCOIND_RPC_PASSWORD locally}
+      BITCOIND_RPC_HOST: bitcoind
+      BITCOIND_RPC_PORT: "18443"
+      INDEXER_URL: tcp://electrs:50001
+      RGB_PROXY_ENDPOINT: rpc://proxy:3000/json-rpc
+      AIRGB_DATA_DIR: /data
+      BIND_HOST: 0.0.0.0
+      AIRGB_WEB_PORT: "5173"
+      ENABLE_REGTEST_SEND: "1"
+      PORT: "8787"
+      AIRGB_LDK_PEER_PORT: "9735"
+      AIRGB_ANNOUNCE_HOST: alice
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:9735:9735"
+    volumes:
+      - alice-data:/data
+  bob:
+    image: airgb-regtest-node
+    build:
+      context: ./wallet
+      dockerfile: Dockerfile
+    environment:
+      <<: *node-env
+      PORT: "8788"
+      AIRGB_LDK_PEER_PORT: "9736"
+      AIRGB_ANNOUNCE_HOST: bob
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8788:8788"
+      - "127.0.0.1:9736:9736"
+    volumes:
+      - bob-data:/data
+volumes:
+  bitcoin-data:
+  electrs-data:
+  alice-data:
+  bob-data:
