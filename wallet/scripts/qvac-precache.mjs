@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const globalNodeModules = path.resolve(path.dirname(process.execPath), '../lib/node_modules');
+const npmRoot = spawnSync('npm', ['root', '--global'], { encoding: 'utf8' });
+const globalNodeModules = npmRoot.status === 0 && npmRoot.stdout.trim()
+  ? npmRoot.stdout.trim()
+  : path.resolve(path.dirname(process.execPath), '../lib/node_modules');
 const sdkPath = path.join(globalNodeModules, '@qvac/cli/node_modules/@qvac/sdk/dist/src/index.js');
 const catalogPath = path.join(globalNodeModules, '@qvac/cli/node_modules/@qvac/inference/dist/models/registry/models.js');
 
