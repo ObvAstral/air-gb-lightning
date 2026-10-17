@@ -602,27 +602,6 @@ export function CenterWorkspace({
             <span className="eyebrow">TETHER WDK · RGB-LN · QVAC AI</span>
             <h1>AIR-GB Command Center</h1>
           </div>
-
-          {/* Selettore Nodo Operativo */}
-          <div className="node-switcher" role="group" aria-label="Selettore Nodo Operativo">
-            {nodes.map(node => {
-              const selected = node.id === activeNode.id;
-              return (
-                <button
-                  key={node.id}
-                  type="button"
-                  className={`node-switch-btn ${selected ? 'active' : ''} accent-${node.accent}`}
-                  onClick={() => onSelectActiveNode(node.id)}
-                >
-                  <span className="switch-dot">
-                    {node.accent === 'emerald' ? '🟢' : node.accent === 'purple' ? '🟣' : '🔵'}
-                  </span>
-                  <span className="switch-name">{node.label}</span>
-                  <code className="switch-port">:{node.port}</code>
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         {/* Riepilogo Saldi Utente */}
@@ -739,28 +718,33 @@ export function CenterWorkspace({
 
       {/* B. SELETTORE MODALITÀ OPERATIVA (TAB BAR CENTRALE) */}
       <nav className="workspace-mode-tabs" aria-label="Modalità Operativa">
-        {!userWallet && <button
+        <button
           type="button"
           className={`mode-tab-btn tab-qvac ${workspaceTab === 'chat' ? 'active' : ''}`}
           onClick={() => onChangeWorkspaceTab('chat')}
         >
           💬 QVAC AI Copilot (Chat)
-        </button>}
+        </button>
         <button
           type="button"
           className={`mode-tab-btn tab-manual ${workspaceTab === 'manual' ? 'active' : ''}`}
-          onClick={() => onChangeWorkspaceTab('manual')}
+          onClick={() => {
+            onChangeWorkspaceTab('manual');
+            setTimeout(() => {
+              document.querySelector('.manual-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 30);
+          }}
         >
           ✍️ Inserimento Manuale TX & Operazioni
         </button>
-        {!userWallet && <button
+        <button
           type="button"
           className={`mode-tab-btn tab-split ${workspaceTab === 'split' ? 'active' : ''}`}
           onClick={() => onChangeWorkspaceTab('split')}
           title="Mostra Chat QVAC e Inserimento Manuale affiancati"
         >
           ⚡ Vista Split (Chat + Manuale)
-        </button>}
+        </button>
       </nav>
 
       {qvacError && (
@@ -771,7 +755,7 @@ export function CenterWorkspace({
 
       <div className={`workspace-panes ${workspaceTab === 'split' ? 'panes-split' : ''}`}>
         {/* C. DETTAGLIO TAB 1: QVAC AI COPILOT (CHAT) */}
-        {( !userWallet && (workspaceTab === 'chat' || workspaceTab === 'split')) && (
+        {(workspaceTab === 'chat' || workspaceTab === 'split') && (
           <section className="workspace-panel chat-panel">
             <div className="panel-header">
               <div>
@@ -1200,9 +1184,6 @@ export function CenterWorkspace({
                 </div>
 
                 {/* 2. Configurazione Algoritmo di Routing */}
-                {userWallet ? (
-                  <p className="notice">I planner MPP e QVAC restano sui nodi della fork. Questo wallet paga senza scegliere l&apos;algoritmo.</p>
-                ) : (
                 <div className="form-card">
                   <div className="card-header-row">
                     <h3>2. Configurazione Algoritmo di Routing (Feature 2 + 3)</h3>
@@ -1381,10 +1362,8 @@ export function CenterWorkspace({
                     </div>
                   )}
                 </div>
-                )}
 
                 {/* 3. Form Manuale Vincoli (QVAC Constraints Compiler) */}
-                {!userWallet && (
                 <div className="form-card">
                   <div className="card-header-row">
                     <h3>3. Form Manuale Vincoli (QVAC Constraints Compiler)</h3>
@@ -1577,7 +1556,6 @@ export function CenterWorkspace({
                     protocollo.
                   </p>
                 </div>
-                )}
 
                 {/* 4. Flusso di Esecuzione Sicuro a 2 Step */}
                 <div className="form-card execution-card">

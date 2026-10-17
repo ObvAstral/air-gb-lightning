@@ -17,6 +17,21 @@ import { selectRoutingAlgorithmWithQvac } from './routing-selector.js';
 const port = Number(process.env.PORT ?? 8787);
 const bindHost = process.env.BIND_HOST ?? '127.0.0.1';
 if (bindHost !== '127.0.0.1' && bindHost !== '0.0.0.0') throw new Error('BIND_HOST deve essere 127.0.0.1 oppure 0.0.0.0');
+if (!process.env.QVAC_MODEL) process.env.QVAC_MODEL = 'my-llm';
+
+const checkQvacHealth = async (): Promise<string> => {
+  try {
+    const base = new URL(process.env.QVAC_URL ?? 'http://127.0.0.1:11434');
+    const res = await fetch(new URL('/v1/models', base), {
+      method: 'GET',
+      signal: AbortSignal.timeout(1000),
+    });
+    if (res.ok) return 'online';
+  } catch {
+    /* QVAC server unreachable */
+  }
+  return process.env.QVAC_MODEL ? 'offline' : 'not_configured';
+};
 const token = randomBytes(32).toString('hex');
 const wallet = new RgbWallet();
 const ragStore = new QvacRagStore(wallet.dataDir);
@@ -133,7 +148,7 @@ const server = createServer(async (req, res) => {
   if (req.headers.origin && !allowedOrigins.has(req.headers.origin)) return json(res, 403, { code: 'BAD_ORIGIN' });
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const path = new URL(req.url ?? '/', `http://${host}`).pathname;
-  if (req.method === 'GET' && path === '/api/health') return json(res, 200, { api: 'ready', rln: wallet.ready ? 'ready' : 'locked', qvac: process.env.QVAC_MODEL ? 'configured_unverified' : 'not_configured', network: 'regtest' });
+  if (req.method === 'GET' && path === '/api/health') return json(res, 200, { api: 'ready', rln: wallet.ready ? 'ready' : 'locked', qvac: await checkQvacHealth(), network: 'regtest' });
   if (req.method === 'GET' && path === '/api/routing/capabilities') return json(res, 200, capabilities);
   if (req.method === 'GET' && path === '/api/session') return json(res, 200, { token });
   if (req.headers['x-session-token'] !== token || (req.headers.origin && !allowedOrigins.has(req.headers.origin)) || (req.method === 'POST' && !req.headers.origin)) return json(res, 403, { code: 'SESSION_REQUIRED' });

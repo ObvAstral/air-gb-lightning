@@ -12,7 +12,9 @@
         "http://127.0.0.1:8787",
         "http://localhost:8787",
         "http://127.0.0.1:8788",
-        "http://localhost:8788"
+        "http://localhost:8788",
+        "http://127.0.0.1:8789",
+        "http://localhost:8789"
       ]
     },
     "openai": {

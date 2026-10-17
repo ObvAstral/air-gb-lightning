@@ -152,12 +152,16 @@ export function App() {
   const aliceSession = useNodeSession(ALICE_BASE_URL);
   const bobSession = useNodeSession(BOB_BASE_URL);
 
-  const [activeNodeId, setActiveNodeId] = useState<NodeId>('user');
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('manual');
+  const [activeNodeId, setActiveNodeId] = useState<NodeId>('alice');
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('chat');
   const [manualSubTab, setManualSubTab] = useState<ManualSubTab>('send');
 
   // Health & Chain state
-  const [health, setHealth] = useState<ServiceHealth>({});
+  const [health, setHealth] = useState<ServiceHealth>({
+    api: 'checking',
+    rln: 'checking',
+    qvac: 'checking',
+  });
   const [healthLoading, setHealthLoading] = useState(false);
   const [chainHeight, setChainHeight] = useState<number | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
@@ -217,34 +221,84 @@ export function App() {
     }));
   }, []);
 
-  const getBaseUrlForNode = useCallback(
-    (id: string) => (id === 'user' ? USER_BASE_URL : id === 'bob' ? BOB_BASE_URL : ALICE_BASE_URL),
-    [],
+  const getSessionForNode = useCallback(
+    (id: string) => {
+      const preferred = id === 'user' ? userSession : id === 'bob' ? bobSession : aliceSession;
+      if (preferred.token) return preferred;
+      if (aliceSession.token) return aliceSession;
+      if (userSession.token) return userSession;
+      if (bobSession.token) return bobSession;
+      return preferred;
+    },
+    [userSession, aliceSession, bobSession],
   );
 
-  const getSessionForNode = useCallback(
-    (id: string) => (id === 'user' ? userSession : id === 'bob' ? bobSession : aliceSession),
-    [userSession, aliceSession, bobSession],
+  const getBaseUrlForNode = useCallback(
+    (id: string) => {
+      const preferredSession = id === 'user' ? userSession : id === 'bob' ? bobSession : aliceSession;
+      if (preferredSession.token) {
+        return id === 'user' ? USER_BASE_URL : id === 'bob' ? BOB_BASE_URL : ALICE_BASE_URL;
+      }
+      if (aliceSession.token) return ALICE_BASE_URL;
+      if (userSession.token) return USER_BASE_URL;
+      if (bobSession.token) return BOB_BASE_URL;
+      return id === 'user' ? USER_BASE_URL : id === 'bob' ? BOB_BASE_URL : ALICE_BASE_URL;
+    },
+    [userSession.token, aliceSession.token, bobSession.token],
   );
 
   const handleSelectActiveNode = useCallback((nodeId: string) => {
     const nextId: NodeId = nodeId === 'user' || nodeId === 'bob' ? nodeId : 'alice';
     setActiveNodeId(nextId);
-    if (nextId === 'user') {
-      setWorkspaceTab('manual');
-    } else if (nextId === 'alice' || nextId === 'bob') {
+    if (nextId === 'alice' || nextId === 'bob') {
       setFixtureNodeId(nextId);
     }
   }, []);
 
-  // Refresh health via Vite proxy /api/health
+  // Refresh health across active node + QVAC
   const refreshHealth = useCallback(async () => {
     setHealthLoading(true);
     try {
-      const response = await fetch(`${USER_BASE_URL}/api/health`, { cache: 'no-store' });
-      if (response.ok) {
-        const data = (await response.json()) as ServiceHealth;
-        setHealth(data);
+      let apiHealth: ServiceHealth | null = null;
+      for (const baseUrl of [ALICE_BASE_URL, USER_BASE_URL, BOB_BASE_URL, '']) {
+        try {
+          const response = await fetch(`${baseUrl}/api/health`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(2000),
+          });
+          if (response.ok) {
+            apiHealth = (await response.json()) as ServiceHealth;
+            break;
+          }
+        } catch {
+          /* try next endpoint */
+        }
+      }
+
+      let qvacDirect: string | null = null;
+      try {
+        const qRes = await fetch('http://127.0.0.1:11434/v1/models', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(1500),
+        });
+        if (qRes.ok) {
+          qvacDirect = 'online';
+        }
+      } catch {
+        /* fallback to backend health report */
+      }
+
+      if (apiHealth) {
+        setHealth({
+          ...apiHealth,
+          qvac: qvacDirect ?? apiHealth.qvac ?? 'offline',
+        });
+      } else {
+        setHealth({
+          api: 'offline',
+          rln: 'offline',
+          qvac: qvacDirect ?? 'offline',
+        });
       }
     } catch {
       setHealth({ api: 'offline', rln: 'offline', qvac: 'offline' });
@@ -696,7 +750,7 @@ export function App() {
       let suggestedExcludedNodes: string[] | undefined;
       let algorithmRationale: string | undefined;
 
-      if (!detectedSetup && activeNodeId !== 'user') {
+      if (!detectedSetup) {
         try {
           const selectRes = await fetch(`${activeBaseUrl}/api/routing/select-algorithm`, {
             method: 'POST',

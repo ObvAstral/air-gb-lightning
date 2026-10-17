@@ -1,17 +1,107 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { PaymentStore } from './payments.js';
+import Ajv from 'ajv';
+import schema from '../../packages/contracts/extracted.schema.json' with { type: 'json' };
+import type { ExtractedConstraints, PaymentDraft, RoutingCapabilities, SyntheticHistoryLevel } from '../../packages/contracts/types.js';
+import { compileConstraints, validNodeId } from '../../packages/policy/compile.js';
+import { interpretWithQvac, InterpretationError } from './interpret.js';
+import { PaymentStore, parseCompiledPolicy } from './payments.js';
 import { UserRgbWallet } from './user-wallet.js';
 import { WalletError } from './wallet.js';
 import { VaultError } from './vault.js';
+import { chainHeight, mineBlocks } from './chain.js';
+import { QvacRagStore, scoreChannelsWithQvac, type LiveChannelInput } from './channel-scoring.js';
+import { selectRoutingAlgorithmWithQvac } from './routing-selector.js';
+import sourceLock from '../../infra/native/source-lock.json' with { type: 'json' };
 
 const port = Number(process.env.PORT ?? 8789);
 const bindHost = process.env.BIND_HOST ?? '127.0.0.1';
 if (bindHost !== '127.0.0.1' && bindHost !== '0.0.0.0') throw new Error('BIND_HOST deve essere 127.0.0.1 oppure 0.0.0.0');
 if (!process.env.ENABLE_REGTEST_SEND) process.env.ENABLE_REGTEST_SEND = '1';
+if (!process.env.QVAC_MODEL) process.env.QVAC_MODEL = 'my-llm';
+
+const checkQvacHealth = async (): Promise<string> => {
+  try {
+    const base = new URL(process.env.QVAC_URL ?? 'http://127.0.0.1:11434');
+    const res = await fetch(new URL('/v1/models', base), {
+      method: 'GET',
+      signal: AbortSignal.timeout(1000),
+    });
+    if (res.ok) return 'online';
+  } catch {
+    /* QVAC server unreachable */
+  }
+  return process.env.QVAC_MODEL ? 'offline' : 'not_configured';
+};
+
 const token = randomBytes(32).toString('hex');
 const wallet = new UserRgbWallet();
+const ragStore = new QvacRagStore(wallet.dataDir);
 const payments = new PaymentStore(wallet.dataDir, wallet);
+const capabilities: RoutingCapabilities = Object.freeze({
+  backendVersion: `ObvAstral/rgb-lightning-node@${sourceLock.node.commit.slice(0, 12)}/rust-lightning@${sourceLock.lightning.commit.slice(0, 12)}`,
+  revision: 'rgb-mpp-1',
+  hardFeeCap: true,
+  hardNodeExclusion: true,
+  hardChannelExclusion: false,
+  perPaymentScoringProfile: true,
+  avoidExtraProbing: true,
+  canInspectFullRoute: true,
+  canGuaranteeConstraintsAcrossRetries: true,
+});
+const validate = new Ajv({ allErrors: true, strict: true }).compile<ExtractedConstraints>(schema);
+
+const resolveKnownNodes = async (custom?: unknown): Promise<{ alias: string; pubkey: string }[]> => {
+  const map = new Map<string, { alias: string; pubkey: string }>();
+  const add = (alias: unknown, pubkey: unknown) => {
+    if (typeof alias !== 'string' || typeof pubkey !== 'string') return;
+    const cleanAlias = alias.trim();
+    const cleanPubkey = pubkey.trim().toLowerCase();
+    if (!cleanAlias || !validNodeId(cleanPubkey)) return;
+    map.set(cleanAlias.toLocaleLowerCase(), { alias: cleanAlias, pubkey: cleanPubkey });
+  };
+  if (wallet.ready) {
+    try {
+      for (const peer of await wallet.peers()) {
+        if (typeof peer.nodeId === 'string') add(peer.nodeId.slice(0, 12), peer.nodeId);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  const activeFixture = ragStore.getActiveFixtureContext();
+  if (activeFixture) {
+    for (const item of activeFixture.knownNodes) add(item.alias, item.pubkey);
+  }
+  for (const peer of [{ alias: 'Alice', port: 8787 }, { alias: 'Bob', port: 8788 }]) {
+    if (map.has(peer.alias.toLocaleLowerCase())) continue;
+    try {
+      const baseUrl = `http://127.0.0.1:${peer.port}`;
+      const sessionRes = await fetch(`${baseUrl}/api/session`, { signal: AbortSignal.timeout(400) });
+      if (!sessionRes.ok) continue;
+      const { token: peerToken } = await sessionRes.json() as { token?: string };
+      if (!peerToken) continue;
+      const summaryRes = await fetch(`${baseUrl}/api/wallet/summary`, {
+        headers: { 'x-session-token': peerToken },
+        signal: AbortSignal.timeout(400),
+      });
+      if (!summaryRes.ok) continue;
+      const summary = await summaryRes.json() as { nodeId?: string };
+      add(peer.alias, summary.nodeId);
+    } catch {
+      /* Ignore offline or locked peer service. */
+    }
+  }
+  if (Array.isArray(custom)) {
+    for (const item of custom) {
+      if (item && typeof item === 'object') {
+        const row = item as Record<string, unknown>;
+        add(row.alias, row.pubkey);
+      }
+    }
+  }
+  return [...map.values()];
+};
 const json = (res: import('node:http').ServerResponse, status: number, data: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
   res.end(JSON.stringify(data, (_key, value) => typeof value === 'bigint' ? value.toString() : value));
@@ -33,7 +123,8 @@ const server = createServer(async (req, res) => {
   if (req.headers.origin && !allowedOrigins.has(req.headers.origin)) return json(res, 403, { code: 'BAD_ORIGIN' });
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   const path = new URL(req.url ?? '/', `http://${host}`).pathname;
-  if (req.method === 'GET' && path === '/api/health') return json(res, 200, { api: 'ready', rln: wallet.ready ? 'ready' : 'locked', wallet: 'wdk-rgb-lightning', network: 'regtest' });
+  if (req.method === 'GET' && path === '/api/health') return json(res, 200, { api: 'ready', rln: wallet.ready ? 'ready' : 'locked', qvac: await checkQvacHealth(), wallet: 'wdk-rgb-lightning', network: 'regtest' });
+  if (req.method === 'GET' && path === '/api/routing/capabilities') return json(res, 200, capabilities);
   if (req.method === 'GET' && path === '/api/session') return json(res, 200, { token });
   if (req.headers['x-session-token'] !== token || (req.headers.origin && !allowedOrigins.has(req.headers.origin)) || (req.method === 'POST' && !req.headers.origin)) return json(res, 403, { code: 'SESSION_REQUIRED' });
   let raw = '';
@@ -43,12 +134,33 @@ const server = createServer(async (req, res) => {
       if (path === '/api/wallet/summary') return json(res, 200, await wallet.summary());
       if (path === '/api/wallet/channels') return json(res, 200, await wallet.channels());
       if (path === '/api/wallet/peers') return json(res, 200, await wallet.peers());
+      if (path === '/api/routing/known-nodes') return json(res, 200, await resolveKnownNodes());
+      if (path === '/api/routing/telemetry') {
+        const episodes = ragStore.listEpisodes(30);
+        const activeFixture = ragStore.getActiveFixtureContext();
+        return json(res, 200, {
+          vectorStoreId: ragStore.getSavedVectorStoreId(),
+          ragBackend: 'qvac-turbovec',
+          count: episodes.length,
+          totalSqliteCount: ragStore.countEpisodes(),
+          activeFixture: activeFixture
+            ? {
+                datasetId: activeFixture.datasetId,
+                level: activeFixture.level,
+                nodeId: activeFixture.nodeId,
+                channelCount: activeFixture.channels.length,
+              }
+            : null,
+          episodes,
+        });
+      }
       if (path === '/api/wallet/assets') return json(res, 200, await wallet.assets());
       if (path === '/api/wallet/asset-balance') {
         const assetId = new URL(req.url ?? '/', `http://${host}`).searchParams.get('assetId');
         return assetId ? json(res, 200, await wallet.assetBalance(assetId)) : json(res, 400, { code: 'INVALID_ASSET' });
       }
       if (path === '/api/wallet/history') return json(res, 200, await wallet.history());
+      if (path === '/api/chain/status') return json(res, 200, { height: await chainHeight() });
       if (path === '/api/payments') return json(res, 200, wallet.ready ? await payments.listReconciled() : payments.list());
       if (path.startsWith('/api/payments/')) {
         const id = path.slice('/api/payments/'.length);
@@ -58,7 +170,7 @@ const server = createServer(async (req, res) => {
       return json(res, 404, { code: 'NOT_FOUND', message: 'Operazione non disponibile sul wallet utente WDK' });
     }
     if (req.method !== 'POST') return json(res, 404, { code: 'NOT_FOUND' });
-    for await (const chunk of req) { raw += chunk; if (raw.length > 12000) return json(res, 413, { code: 'TOO_LARGE' }); }
+    for await (const chunk of req) { raw += chunk; if (raw.length > 64000) return json(res, 413, { code: 'TOO_LARGE' }); }
     const body = JSON.parse(raw) as Record<string, unknown>;
     if (!body || typeof body !== 'object' || Array.isArray(body)) return json(res, 400, { code: 'INVALID_JSON_OBJECT' });
     if (path === '/api/wallet/create' || path === '/api/wallet/import') {
@@ -73,6 +185,10 @@ const server = createServer(async (req, res) => {
     if (path === '/api/wallet/sync') {
       await wallet.refresh();
       return json(res, 200, { synced: true });
+    }
+    if (path === '/api/chain/mine') {
+      if (typeof body.blocks !== 'number') return json(res, 400, { code: 'INVALID_INPUT' });
+      return json(res, 200, await mineBlocks(body.blocks));
     }
     if (path === '/api/wallet/rgb/issue') {
       if (typeof body.ticker !== 'string' || typeof body.name !== 'string' || typeof body.precision !== 'number' || !Array.isArray(body.amounts) || body.amounts.some(amount => typeof amount !== 'number')) return json(res, 400, { code: 'INVALID_INPUT' });
@@ -110,14 +226,76 @@ const server = createServer(async (req, res) => {
       if (typeof body.id !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
       return json(res, 200, await payments.confirm(body.id));
     }
-    return json(res, 404, { code: 'NOT_FOUND', message: 'Operazione non disponibile sul wallet utente WDK. I planner MPP restano sui nodi della fork.' });
+    if (path === '/api/constraints/interpret') {
+      if (typeof body.text !== 'string') return json(res, 400, { code: 'INVALID_TEXT' });
+      return json(res, 200, await interpretWithQvac(body.text));
+    }
+    if (path === '/api/routing/telemetry/seed') {
+      const channels = wallet.ready ? await wallet.channels() : [];
+      const knownNodes = await resolveKnownNodes(body.knownNodes);
+      return json(res, 200, await ragStore.seedDemoEpisodes({ channels, knownNodes }));
+    }
+    if (path === '/api/routing/telemetry/load-fixture') {
+      const level = Number(body.level) as SyntheticHistoryLevel;
+      const nodeId = typeof body.nodeId === 'string' ? body.nodeId : '';
+      const maxRagIngest = typeof body.maxRagIngest === 'number' ? body.maxRagIngest : undefined;
+      return json(res, 200, await ragStore.loadSyntheticNodeHistory({ level, nodeId, maxRagIngest }));
+    }
+    if (path === '/api/routing/score-channels' || path === '/api/routing/select-algorithm') {
+      let amountMsat = typeof body.amountMsat === 'string' ? body.amountMsat : null;
+      let assetId = typeof body.assetId === 'string' ? body.assetId : null;
+      let assetAmount = typeof body.assetAmount === 'string' ? body.assetAmount : null;
+      let payeePubkey = typeof body.payeePubkey === 'string' ? body.payeePubkey : null;
+      if (typeof body.invoice === 'string' && body.invoice.trim() && wallet.ready) {
+        const decoded = await wallet.decodeLightning(body.invoice.trim());
+        amountMsat = decoded.amountMsat ?? amountMsat;
+        assetId = decoded.assetId ?? assetId;
+        assetAmount = decoded.assetAmount ?? assetAmount;
+        payeePubkey = decoded.payeePubkey ?? payeePubkey;
+      }
+      if (!amountMsat || !/^[1-9][0-9]*$/.test(amountMsat)) {
+        return json(res, 422, { code: 'INVALID_AMOUNT', message: 'Importo in msat richiesto per valutare i canali' });
+      }
+      let liveChannels: LiveChannelInput[] = [];
+      if (Array.isArray(body.channels)) {
+        liveChannels = body.channels as LiveChannelInput[];
+      } else if (wallet.ready) {
+        liveChannels = await wallet.channels();
+      }
+      if (liveChannels.length === 0 && ragStore.getActiveFixtureContext()) {
+        liveChannels = ragStore.getActiveFixtureContext()!.channels;
+      }
+      const knownNodes = await resolveKnownNodes(body.knownNodes);
+      const compiledPolicy = parseCompiledPolicy(body.constraints);
+      const userPreference = typeof body.userPreference === 'string' ? body.userPreference.slice(0, 500) : null;
+      const scoringInput = { amountMsat, assetId, assetAmount, payeePubkey, userPreference, compiledPolicy, channels: liveChannels, knownNodes };
+      if (path === '/api/routing/select-algorithm') {
+        return json(res, 200, await selectRoutingAlgorithmWithQvac(scoringInput, ragStore));
+      }
+      return json(res, 200, await scoreChannelsWithQvac(scoringInput, ragStore));
+    }
+    if (path === '/api/constraints/compile') {
+      if (!validate(body.extracted)) return json(res, 400, { code: 'INVALID_SCHEMA' });
+      const payment = body.payment as PaymentDraft;
+      if (!payment || typeof payment !== 'object' || typeof payment.invoice !== 'string' || typeof payment.amount !== 'string' || typeof payment.assetId !== 'string') return json(res, 400, { code: 'INVALID_PAYMENT' });
+      if (!/^[1-9][0-9]*$/.test(payment.amount) || BigInt(payment.amount) > BigInt(Number.MAX_SAFE_INTEGER)) return json(res, 422, { code: 'INVALID_AMOUNT', message: 'Importo Lightning in msat non valido' });
+      const decoded = await wallet.decodeLightning(payment.invoice);
+      const amount = BigInt(payment.amount).toString();
+      if (decoded.amountMsat !== null && decoded.amountMsat !== amount) return json(res, 422, { code: 'AMOUNT_MISMATCH', message: 'Importo diverso dalla invoice' });
+      if ((decoded.assetId ?? 'BTC') !== payment.assetId) return json(res, 422, { code: 'ASSET_MISMATCH', message: 'Asset diverso dalla invoice' });
+      const canonical: PaymentDraft = { invoice: decoded.invoice, amount, assetId: decoded.assetId ?? 'BTC', network: decoded.network };
+      const knownNodes = await resolveKnownNodes(body.knownNodes);
+      return json(res, 200, compileConstraints({ extracted: body.extracted, payment: canonical, capabilities, knownNodes, payeePubkey: decoded.payeePubkey }));
+    }
+    return json(res, 404, { code: 'NOT_FOUND', message: 'Operazione non disponibile sul wallet utente WDK.' });
   } catch (error) {
     if (error instanceof WalletError || error instanceof VaultError) return json(res, 422, { code: error.code, message: error.message });
+    if (error instanceof InterpretationError) return json(res, 422, { code: error.code, message: error.message });
     if (error instanceof SyntaxError) return json(res, 400, { code: 'INVALID_JSON' });
     return json(res, 503, { code: 'WDK_UNAVAILABLE', message: error instanceof Error ? error.message : 'Operazione WDK non disponibile' });
   }
 });
 server.listen(port, bindHost, () => console.log(`AIR-GB user wallet: http://127.0.0.1:${port}`));
-const stop = () => { wallet.shutdown(); server.close(); };
+const stop = () => { ragStore.close(); wallet.shutdown(); server.close(); };
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);
