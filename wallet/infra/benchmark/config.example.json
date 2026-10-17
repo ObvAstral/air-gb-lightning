@@ -1,0 +1,16 @@
+{
+  "label": "machine-a",
+  "assets": {
+    "TEST": "rgb:REPLACE_WITH_REAL_CONTRACT_ID"
+  },
+  "paymentTimeoutMs": 180000,
+  "observationTimeoutMs": 15000,
+  "requestTimeoutMs": 120000,
+  "nodes": {},
+  "logDirectories": {},
+  "baseline": {
+    "repositoryCommit": "REPLACE_WITH_STOCK_REPOSITORY_COMMIT",
+    "mpp": false,
+    "routing": "stock"
+  }
+}

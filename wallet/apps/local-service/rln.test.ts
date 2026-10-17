@@ -25,6 +25,7 @@ test('il runtime rifiuta un binario alterato o compilato da un altro commit', as
   const manifest = {
     source: sourceLock, platform: process.platform, arch: process.arch,
     patchSha256: hash(await readFile(join(import.meta.dirname, '../../infra/native/loopback.patch'))),
+    telemetryPatchSha256: hash(await readFile(join(import.meta.dirname, '../../infra/native/benchmark-telemetry.patch'))),
     binarySha256: hash('test-binary'),
   };
   try {

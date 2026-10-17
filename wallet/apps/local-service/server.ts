@@ -73,7 +73,9 @@ const recordPaymentEpisode = async (record: PaymentRecord): Promise<void> => {
     outcome: record.status,
     failureReason: record.status === 'failed' ? 'Payment routing or HTLC settlement failed' : null,
     outboundRatioPct,
-    feeMsat: record.routing.max_fee_msat ?? null,
+    // The routing limit is a budget, not a paid fee. Settled fees are recorded
+    // separately by the benchmark observer; do not teach QVAC fabricated fees.
+    feeMsat: null,
     notes: `Pagamento ${record.status} (${record.amountMsat} msat${record.assetId ? `, RGB ${record.assetId}` : ''}) con algoritmo ${record.routing.algorithm}.`,
   });
 };
@@ -338,7 +340,7 @@ const server = createServer(async (req, res) => {
         knownNodes,
       };
       if (path === '/api/routing/select-algorithm') {
-        return json(res, 200, await selectRoutingAlgorithmWithQvac(scoringInput, ragStore));
+        return json(res, 200, await selectRoutingAlgorithmWithQvac(scoringInput, ragStore, undefined, { requireModelDecision: body.requireModelDecision === true }));
       }
       return json(res, 200, await scoreChannelsWithQvac(scoringInput, ragStore));
     }

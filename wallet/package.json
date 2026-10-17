@@ -24,7 +24,10 @@
     "qvac:precache": "node scripts/qvac-precache.mjs",
     "qvac:serve": "qvac serve --openai --port 11434 -c qvac.config.json",
     "qvac:smoke": "node --import tsx scripts/qvac-smoke-test.mjs",
-    "qvac:smoke:scoring": "node --import tsx infra/regtest/smoke-qvac-scoring.mjs"
+    "qvac:smoke:scoring": "node --import tsx infra/regtest/smoke-qvac-scoring.mjs",
+    "benchmark:run": "node infra/benchmark/run.mjs",
+    "benchmark:compare": "node infra/benchmark/compare.mjs",
+    "benchmark:unit": "node --test infra/benchmark/benchmark.test.mjs"
   },
   "devDependencies": {
     "@types/node": "24.5.2",

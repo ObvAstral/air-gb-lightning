@@ -1,0 +1,62 @@
+# Optional overlay; does not create or reset wallets. Use with the root Compose files.
+services:
+  alice:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  bob:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  carol:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  dave:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  erin:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  frank:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  grace:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  heidi:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  ivan:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  judy:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  karl:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  leo:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  mia:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  nico:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  olive:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  paul:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  quinn:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  ruth:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  saul:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"
+  tara:
+    environment:
+      AIRGB_BENCHMARK_EVENTS: "1"

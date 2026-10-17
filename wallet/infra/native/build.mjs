@@ -7,16 +7,18 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const config = JSON.parse(await readFile(new URL('./source-lock.json', import.meta.url), 'utf8'));
 const patch = fileURLToPath(new URL('./loopback.patch', import.meta.url));
+const telemetryPatch = fileURLToPath(new URL('./benchmark-telemetry.patch', import.meta.url));
 const sha = data => createHash('sha256').update(data).digest('hex');
 const runtime = join(root, 'native-data/runtime');
 const bin = join(runtime, 'bin');
 const binaryName = 'rgb-lightning-node';
 const manifestName = 'build.json';
-const expected = { source: config, patchSha256: sha(await readFile(patch)), platform: process.platform, arch: process.arch };
+const expected = { source: config, patchSha256: sha(await readFile(patch)), telemetryPatchSha256: sha(await readFile(telemetryPatch)), platform: process.platform, arch: process.arch };
 const matches = async directory => {
   const manifest = JSON.parse(await readFile(join(directory, manifestName), 'utf8'));
   return JSON.stringify(manifest.source) === JSON.stringify(expected.source)
     && manifest.patchSha256 === expected.patchSha256
+    && manifest.telemetryPatchSha256 === expected.telemetryPatchSha256
     && manifest.platform === expected.platform && manifest.arch === expected.arch
     && manifest.binarySha256 === sha(await readFile(join(directory, binaryName)));
 };
@@ -74,8 +76,13 @@ if (!ready) {
     else run('git', ['-C', source, 'apply', '--reverse', '--check', patch]);
     const main = spawnSync('git', ['-C', source, 'diff', '--full-index', '--no-ext-diff', 'HEAD', '--', 'src/main.rs'], { encoding: 'utf8' });
     if (main.status !== 0 || main.stdout !== await readFile(patch, 'utf8')) throw new Error('Modifiche inattese al listener REST');
+    const telemetryForward = spawnSync('git', ['-C', source, 'apply', '--check', telemetryPatch], { stdio: 'ignore' });
+    if (telemetryForward.status === 0) run('git', ['-C', source, 'apply', telemetryPatch]);
+    else run('git', ['-C', source, 'apply', '--reverse', '--check', telemetryPatch]);
+    const telemetryDiff = spawnSync('git', ['-C', source, 'diff', '--full-index', '--no-ext-diff', 'HEAD', '--', 'src/ldk.rs'], { encoding: 'utf8' });
+    if (telemetryDiff.status !== 0 || telemetryDiff.stdout !== await readFile(telemetryPatch, 'utf8')) throw new Error('Modifiche inattese alla telemetria benchmark');
     // Reject unrelated edits so that the build manifest describes the source.
-    for (const [directory, allowed] of [[source, ['src/main.rs', 'rust-lightning']], [join(source, 'rust-lightning'), []]]) {
+    for (const [directory, allowed] of [[source, ['src/main.rs', 'src/ldk.rs', 'rust-lightning']], [join(source, 'rust-lightning'), []]]) {
       const diff = spawnSync('git', ['-C', directory, 'diff', 'HEAD', '--name-only'], { encoding: 'utf8' });
       if (diff.status !== 0 || diff.stdout.trim().split('\n').filter(Boolean).some(name => !allowed.includes(name))) throw new Error(`Modifiche inattese nei sorgenti ${directory}`);
     }

@@ -438,6 +438,7 @@ export async function selectRoutingAlgorithmWithQvac(
   input: ScoreChannelsInput,
   ragStore: QvacRagStore,
   signal?: AbortSignal,
+  options: { requireModelDecision?: boolean } = {},
 ): Promise<AlgorithmSelectionResult> {
   const started = performance.now();
   const channelScoring = await scoreChannelsWithQvac(input, ragStore, signal);
@@ -537,6 +538,10 @@ export async function selectRoutingAlgorithmWithQvac(
       }
     }
 
+    if (options.requireModelDecision && !llmCandidate) {
+      throw new InterpretationError('QVAC_SELECTOR_REQUIRED', 'Il benchmark richiede una risposta valida del selettore QVAC; fallback deterministico escluso');
+    }
+
     const decision = selectRoutingStrategyDeterministic({
       input,
       overallProfile: channelScoring.overallProfile,
@@ -556,6 +561,9 @@ export async function selectRoutingAlgorithmWithQvac(
 
     return {
       schemaVersion: '1.0',
+      model: process.env.QVAC_MODEL ?? null,
+      modelDecision: llmCandidate ?? null,
+      selectionSource: llmCandidate ? 'qvac_with_guardrails' : 'deterministic_fallback',
       selectedAlgorithm: decision.selectedAlgorithm,
       reasonCode: decision.reasonCode,
       rationale: decision.rationale,

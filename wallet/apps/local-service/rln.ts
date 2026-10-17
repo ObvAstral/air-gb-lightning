@@ -19,6 +19,7 @@ export async function verifiedBinary(directory = join(import.meta.dirname, '../.
     const binary = join(directory, 'rgb-lightning-node');
     const patchSha256 = sha(await readFile(join(import.meta.dirname, '../../infra/native/loopback.patch')));
     if (JSON.stringify(manifest.source) !== JSON.stringify(sourceLock)
+      || manifest.telemetryPatchSha256 !== sha(await readFile(join(import.meta.dirname, '../../infra/native/benchmark-telemetry.patch')))
       || manifest.patchSha256 !== patchSha256 || manifest.platform !== process.platform || manifest.arch !== process.arch
       || manifest.binarySha256 !== sha(await readFile(binary))) throw new Error('Manifest non corrispondente');
     return binary;

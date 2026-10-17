@@ -225,3 +225,13 @@ npm run qvac:smoke
 ```
 
 UI interpretation communicates with Alice on ports `5173` and `8801`.
+
+## Routing benchmark: QVAC versus stock RGB Lightning
+
+The [20-payment benchmark](wallet/infra/benchmark/README.md) uses the local nodes
+from `topology.json`, asks QVAC to select the algorithm and MPP limit before each
+payment, and records settled fees, paths, node logs and before/after snapshots.
+It includes a stock REST adapter and a JSON/CSV comparison command. The runner
+attaches to prepared regtest nodes and does not start or reset the environment.
+See the benchmark guide for the optional observation patch, configuration and
+commands to run on the benchmark machine.

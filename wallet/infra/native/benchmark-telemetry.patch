@@ -1,0 +1,60 @@
+diff --git a/src/ldk.rs b/src/ldk.rs
+index 48026209ee498245f3ff212c4b027fac10eb47d7..493ecd1bd79e1e738f5b6ad800119b13279ae5f7 100644
+--- a/src/ldk.rs
++++ b/src/ldk.rs
+@@ -741,6 +741,55 @@ async fn handle_ldk_events(
+     unlocked_state: Arc<UnlockedAppState>,
+     static_state: Arc<StaticState>,
+ ) -> Result<(), ReplayEvent> {
++    // Opt-in observations only: do not change routing, retries or event handling.
++    if std::env::var("AIRGB_BENCHMARK_EVENTS").as_deref() == Ok("1") {
++        use std::io::Write;
++        let path_json = |path: &lightning::routing::router::Path| {
++            serde_json::json!({
++                "amountMsat": path.final_value_msat().to_string(),
++                "feeMsat": path.fee_msat().to_string(),
++                "assetAmount": path.hops.last().and_then(|h| h.rgb_payment.as_ref().map(|(_, n)| n.to_string())),
++                "blinded": path.blinded_tail.is_some(),
++                "hops": path.hops.iter().map(|h| serde_json::json!({
++                    "nodeId": h.pubkey.to_string(),
++                    "shortChannelId": h.short_channel_id.to_string(),
++                    "feeOrFinalAmountMsat": h.fee_msat.to_string(),
++                    "cltvExpiryDelta": h.cltv_expiry_delta
++                })).collect::<Vec<_>>()
++            })
++        };
++        let observation = match &event {
++            Event::PaymentSent { payment_hash, fee_paid_msat, .. } => Some(serde_json::json!({
++                "kind": "payment_succeeded", "paymentHash": payment_hash.to_string(),
++                "feeMsat": fee_paid_msat.map(|n| n.to_string())
++            })),
++            Event::PaymentPathSuccessful { payment_hash, path, .. } => Some(serde_json::json!({
++                "kind": "path_succeeded", "paymentHash": payment_hash.map(|h| h.to_string()),
++                "path": path_json(path)
++            })),
++            Event::PaymentPathFailed { payment_hash, path, failure, .. } => Some(serde_json::json!({
++                "kind": "path_failed", "paymentHash": payment_hash.to_string(),
++                "path": path_json(path), "error": format!("{failure:?}")
++            })),
++            Event::PaymentForwarded { payment_hash, prev_channel_id, next_channel_id, total_fee_earned_msat, .. } => Some(serde_json::json!({
++                "kind": "forwarded", "paymentHash": payment_hash.to_string(),
++                "incomingChannelId": prev_channel_id.map(|c| c.to_string()),
++                "outgoingChannelId": next_channel_id.map(|c| c.to_string()),
++                "feeMsat": total_fee_earned_msat.map(|n| n.to_string())
++            })),
++            _ => None,
++        };
++        if let Some(mut observation) = observation {
++            observation["timestampMs"] = serde_json::json!(std::time::SystemTime::now()
++                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
++            let result = std::fs::OpenOptions::new().create(true).append(true)
++                .open(static_state.ldk_data_dir.join("benchmark-events.jsonl"))
++                .and_then(|mut file| writeln!(file, "{observation}"));
++            if let Err(error) = result {
++                tracing::error!("Cannot persist benchmark observation: {error}");
++            }
++        }
++    }
+     match &event {
+         Event::PaymentSent {
+             payment_id: Some(id),

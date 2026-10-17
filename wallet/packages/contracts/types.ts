@@ -160,6 +160,9 @@ export type AlgorithmSelectorClassifierOutput = {
 };
 
 export type AlgorithmSelectionResult = {
+  model?: string | null;
+  selectionSource?: 'qvac_with_guardrails' | 'deterministic_fallback';
+  modelDecision?: { selectedAlgorithm?: RoutingAlgorithm; reasonCode?: AlgorithmSelectionReasonCode; recommendedMaxPaths?: number; rationale?: string } | null;
   schemaVersion: '1.0';
   selectedAlgorithm: RoutingAlgorithm;
   reasonCode: AlgorithmSelectionReasonCode;
