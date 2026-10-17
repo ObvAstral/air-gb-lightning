@@ -14,7 +14,27 @@
         "http://127.0.0.1:8788",
         "http://localhost:8788",
         "http://127.0.0.1:8789",
-        "http://localhost:8789"
+        "http://localhost:8789",
+        "http://127.0.0.1:8801",
+        "http://localhost:8801",
+        "http://127.0.0.1:8802",
+        "http://localhost:8802",
+        "http://127.0.0.1:8803",
+        "http://localhost:8803",
+        "http://127.0.0.1:8804",
+        "http://localhost:8804",
+        "http://127.0.0.1:8805",
+        "http://localhost:8805",
+        "http://127.0.0.1:8806",
+        "http://localhost:8806",
+        "http://127.0.0.1:8807",
+        "http://localhost:8807",
+        "http://127.0.0.1:8808",
+        "http://localhost:8808",
+        "http://127.0.0.1:8809",
+        "http://localhost:8809",
+        "http://127.0.0.1:8810",
+        "http://localhost:8810"
       ]
     },
     "openai": {

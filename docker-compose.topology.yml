@@ -1,0 +1,440 @@
+# Generated from topology.json by scripts/render-topology-compose.mjs. Do not edit by hand.
+x-topology-env: &topology-env
+  BITCOIND_RPC_USER: user
+  BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:?Set BITCOIND_RPC_PASSWORD locally}
+  BITCOIND_RPC_HOST: bitcoind
+  BITCOIND_RPC_PORT: "18443"
+  INDEXER_URL: tcp://electrs:50001
+  RGB_PROXY_ENDPOINT: rpc://proxy:3000/json-rpc
+  AIRGB_DATA_DIR: /data
+  BIND_HOST: 0.0.0.0
+  AIRGB_WEB_PORT: "5173"
+  ENABLE_REGTEST_SEND: "1"
+  QVAC_MODEL: my-llm
+
+services:
+  alice:
+    image: airgb-regtest-node-mpp
+    build:
+      context: ./wallet
+      dockerfile: Dockerfile
+    environment:
+      <<: *topology-env
+      PORT: "8801"
+      AIRGB_LDK_PEER_PORT: "9801"
+      AIRGB_ANNOUNCE_HOST: alice
+      AIRGB_NODE_ALIAS: "Alice"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8801:8801"
+      - "127.0.0.1:9801:9801"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - alice-mpp-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  bob:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8802"
+      AIRGB_LDK_PEER_PORT: "9802"
+      AIRGB_ANNOUNCE_HOST: bob
+      AIRGB_NODE_ALIAS: "Bob"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8802:8802"
+      - "127.0.0.1:9802:9802"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - bob-mpp-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  carol:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8803"
+      AIRGB_LDK_PEER_PORT: "9803"
+      AIRGB_ANNOUNCE_HOST: carol
+      AIRGB_NODE_ALIAS: "Carol"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8803:8803"
+      - "127.0.0.1:9803:9803"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - carol-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  dave:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8804"
+      AIRGB_LDK_PEER_PORT: "9804"
+      AIRGB_ANNOUNCE_HOST: dave
+      AIRGB_NODE_ALIAS: "Dave"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8804:8804"
+      - "127.0.0.1:9804:9804"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - dave-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  erin:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8805"
+      AIRGB_LDK_PEER_PORT: "9805"
+      AIRGB_ANNOUNCE_HOST: erin
+      AIRGB_NODE_ALIAS: "Erin"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8805:8805"
+      - "127.0.0.1:9805:9805"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - erin-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  frank:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8806"
+      AIRGB_LDK_PEER_PORT: "9806"
+      AIRGB_ANNOUNCE_HOST: frank
+      AIRGB_NODE_ALIAS: "Frank"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8806:8806"
+      - "127.0.0.1:9806:9806"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - frank-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  grace:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8807"
+      AIRGB_LDK_PEER_PORT: "9807"
+      AIRGB_ANNOUNCE_HOST: grace
+      AIRGB_NODE_ALIAS: "Grace"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8807:8807"
+      - "127.0.0.1:9807:9807"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - grace-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  heidi:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8808"
+      AIRGB_LDK_PEER_PORT: "9808"
+      AIRGB_ANNOUNCE_HOST: heidi
+      AIRGB_NODE_ALIAS: "Heidi"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8808:8808"
+      - "127.0.0.1:9808:9808"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - heidi-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  ivan:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8809"
+      AIRGB_LDK_PEER_PORT: "9809"
+      AIRGB_ANNOUNCE_HOST: ivan
+      AIRGB_NODE_ALIAS: "Ivan"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8809:8809"
+      - "127.0.0.1:9809:9809"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - ivan-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  judy:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8810"
+      AIRGB_LDK_PEER_PORT: "9810"
+      AIRGB_ANNOUNCE_HOST: judy
+      AIRGB_NODE_ALIAS: "Judy"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8810:8810"
+      - "127.0.0.1:9810:9810"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - judy-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  karl:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8811"
+      AIRGB_LDK_PEER_PORT: "9811"
+      AIRGB_ANNOUNCE_HOST: karl
+      AIRGB_NODE_ALIAS: "Karl"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8811:8811"
+      - "127.0.0.1:9811:9811"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - karl-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  leo:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8812"
+      AIRGB_LDK_PEER_PORT: "9812"
+      AIRGB_ANNOUNCE_HOST: leo
+      AIRGB_NODE_ALIAS: "Leo"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8812:8812"
+      - "127.0.0.1:9812:9812"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - leo-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  mia:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8813"
+      AIRGB_LDK_PEER_PORT: "9813"
+      AIRGB_ANNOUNCE_HOST: mia
+      AIRGB_NODE_ALIAS: "Mia"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8813:8813"
+      - "127.0.0.1:9813:9813"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - mia-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  nico:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8814"
+      AIRGB_LDK_PEER_PORT: "9814"
+      AIRGB_ANNOUNCE_HOST: nico
+      AIRGB_NODE_ALIAS: "Nico"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8814:8814"
+      - "127.0.0.1:9814:9814"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - nico-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  olive:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8815"
+      AIRGB_LDK_PEER_PORT: "9815"
+      AIRGB_ANNOUNCE_HOST: olive
+      AIRGB_NODE_ALIAS: "Olive"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8815:8815"
+      - "127.0.0.1:9815:9815"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - olive-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  paul:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8816"
+      AIRGB_LDK_PEER_PORT: "9816"
+      AIRGB_ANNOUNCE_HOST: paul
+      AIRGB_NODE_ALIAS: "Paul"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8816:8816"
+      - "127.0.0.1:9816:9816"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - paul-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  quinn:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8817"
+      AIRGB_LDK_PEER_PORT: "9817"
+      AIRGB_ANNOUNCE_HOST: quinn
+      AIRGB_NODE_ALIAS: "Quinn"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8817:8817"
+      - "127.0.0.1:9817:9817"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - quinn-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  ruth:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8818"
+      AIRGB_LDK_PEER_PORT: "9818"
+      AIRGB_ANNOUNCE_HOST: ruth
+      AIRGB_NODE_ALIAS: "Ruth"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8818:8818"
+      - "127.0.0.1:9818:9818"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - ruth-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  saul:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8819"
+      AIRGB_LDK_PEER_PORT: "9819"
+      AIRGB_ANNOUNCE_HOST: saul
+      AIRGB_NODE_ALIAS: "Saul"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8819:8819"
+      - "127.0.0.1:9819:9819"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - saul-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+  tara:
+    image: airgb-regtest-node-mpp
+    environment:
+      <<: *topology-env
+      PORT: "8820"
+      AIRGB_LDK_PEER_PORT: "9820"
+      AIRGB_ANNOUNCE_HOST: tara
+      AIRGB_NODE_ALIAS: "Tara"
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8820:8820"
+      - "127.0.0.1:9820:9820"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
+    volumes:
+      - tara-topology-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
+
+volumes:
+  alice-mpp-data:
+  bob-mpp-data:
+  carol-topology-data:
+  dave-topology-data:
+  erin-topology-data:
+  frank-topology-data:
+  grace-topology-data:
+  heidi-topology-data:
+  ivan-topology-data:
+  judy-topology-data:
+  karl-topology-data:
+  leo-topology-data:
+  mia-topology-data:
+  nico-topology-data:
+  olive-topology-data:
+  paul-topology-data:
+  quinn-topology-data:
+  ruth-topology-data:
+  saul-topology-data:
+  tara-topology-data:

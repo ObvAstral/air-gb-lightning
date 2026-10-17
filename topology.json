@@ -98,8 +98,77 @@
       "alias": "Judy",
       "p2pPort": 9810,
       "apiPort": 8810
+    },
+    {
+      "id": "karl",
+      "alias": "Karl",
+      "p2pPort": 9811,
+      "apiPort": 8811
+    },
+    {
+      "id": "leo",
+      "alias": "Leo",
+      "p2pPort": 9812,
+      "apiPort": 8812
+    },
+    {
+      "id": "mia",
+      "alias": "Mia",
+      "p2pPort": 9813,
+      "apiPort": 8813
+    },
+    {
+      "id": "nico",
+      "alias": "Nico",
+      "p2pPort": 9814,
+      "apiPort": 8814
+    },
+    {
+      "id": "olive",
+      "alias": "Olive",
+      "p2pPort": 9815,
+      "apiPort": 8815
+    },
+    {
+      "id": "paul",
+      "alias": "Paul",
+      "p2pPort": 9816,
+      "apiPort": 8816
+    },
+    {
+      "id": "quinn",
+      "alias": "Quinn",
+      "p2pPort": 9817,
+      "apiPort": 8817
+    },
+    {
+      "id": "ruth",
+      "alias": "Ruth",
+      "p2pPort": 9818,
+      "apiPort": 8818
+    },
+    {
+      "id": "saul",
+      "alias": "Saul",
+      "p2pPort": 9819,
+      "apiPort": 8819
+    },
+    {
+      "id": "tara",
+      "alias": "Tara",
+      "p2pPort": 9820,
+      "apiPort": 8820
     }
   ],
+  "demoMesh": {
+    "hub": "alice",
+    "ticker": "DEMO",
+    "capacitySat": 100000,
+    "assetAmount": 20,
+    "seedAmount": 8,
+    "hubMinSat": 2500000,
+    "utxoBatch": 8
+  },
   "assets": [
     {
       "id": "TEST",
@@ -118,7 +187,17 @@
         "grace": "1000",
         "heidi": "1000",
         "ivan": "1000",
-        "judy": "0"
+        "judy": "0",
+        "karl": "0",
+        "leo": "0",
+        "mia": "0",
+        "nico": "0",
+        "olive": "0",
+        "paul": "0",
+        "quinn": "0",
+        "ruth": "0",
+        "saul": "0",
+        "tara": "0"
       }
     }
   ],

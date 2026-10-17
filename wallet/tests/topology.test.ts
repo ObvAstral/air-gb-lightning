@@ -16,10 +16,10 @@ const history = loadHistory(20);
 const pubkey = (id: string) => history.topology.nodes.find(node => node.id === id)!.pubkey;
 const canonical = (paths: { nodes: string[]; amountMsat: string; assetAmount?: string | null }[]) => paths.map(path => JSON.stringify({ nodes: path.nodes, amountMsat: path.amountMsat, assetAmount: path.assetAmount ?? null })).sort();
 
-test('topology.json definisce dieci nodi, quindici canali e nove percorsi con capacita RGB totale 100', () => {
-  assert.equal(topology.nodes.length, 10); assert.equal(topology.channels.length, 15);
-  assert.equal(new Set(topology.nodes.map(node => node.id)).size, 10);
-  assert.equal(new Set(topology.nodes.flatMap(node => [node.apiPort, node.p2pPort])).size, 20);
+test('topology.json definisce venti nodi, quindici canali di fixture e nove percorsi con capacita RGB totale 100', () => {
+  assert.equal(topology.nodes.length, 20); assert.equal(topology.channels.length, 15);
+  assert.equal(new Set(topology.nodes.map(node => node.id)).size, 20);
+  assert.equal(new Set(topology.nodes.flatMap(node => [node.apiPort, node.p2pPort])).size, 40);
   assert.equal(new Set(topology.scenarios.map(s => s.id)).size, topology.scenarios.length);
   assert.equal(topology.scenarios.length, 16);
   assert.deepEqual(topology.algorithmMatrix.map(a => a.algorithm), ['ldk_dijkstra', 'yen', 'min_cost_flow', 'multi_objective']);

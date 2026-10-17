@@ -73,7 +73,7 @@ const resolveKnownNodes = async (custom?: unknown): Promise<{ alias: string; pub
   if (activeFixture) {
     for (const item of activeFixture.knownNodes) add(item.alias, item.pubkey);
   }
-  for (const peer of [{ alias: 'Alice', port: 8787 }, { alias: 'Bob', port: 8788 }]) {
+  for (const peer of [{ alias: 'Alice', port: 8801 }, { alias: 'Bob', port: 8802 }]) {
     if (map.has(peer.alias.toLocaleLowerCase())) continue;
     try {
       const baseUrl = `http://127.0.0.1:${peer.port}`;

@@ -9,13 +9,16 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { VaultStore } from '../../apps/local-service/vault.ts';
 import { ROUTING_ALGORITHMS } from '../../packages/contracts/types.ts';
+import topology from '../../../topology.json' with { type: 'json' };
 
 const walletRoot = fileURLToPath(new URL('../../', import.meta.url));
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const issuerDir = join(walletRoot, 'native-data/regtest/issuer');
 const nodeVersion = '24.19.0';
 const origin = 'http://127.0.0.1:5173';
-const nodes = { alice: 'http://127.0.0.1:8787', bob: 'http://127.0.0.1:8788', user: 'http://127.0.0.1:8789' };
+const topologyNodes = Object.fromEntries(topology.nodes.map(node => [node.id, `http://127.0.0.1:${node.apiPort}`]));
+const nodes = { ...topologyNodes, user: 'http://127.0.0.1:8789' };
+const forkNodeIds = topology.nodes.map(node => node.id);
 const tickerPattern = /^[A-Z][A-Z0-9]{1,7}$/;
 const passwords = new Map();
 const sessions = new Map();
@@ -29,26 +32,31 @@ class CliError extends Error {
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const other = name => name === 'alice' ? 'bob' : 'alice';
-const passwordEnv = name => name === 'alice' ? 'AIRGB_ALICE_PASSWORD' : name === 'bob' ? 'AIRGB_BOB_PASSWORD' : name === 'user' ? 'AIRGB_USER_PASSWORD' : 'AIRGB_ISSUER_PASSWORD';
+const passwordEnv = name => {
+  if (name === 'user') return 'AIRGB_USER_PASSWORD';
+  if (name === 'issuer') return 'AIRGB_ISSUER_PASSWORD';
+  return `AIRGB_${name.toUpperCase()}_PASSWORD`;
+};
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
 const line = (label, value) => console.log(`${label.padEnd(12)}${value ?? ''}`);
 
 function help() {
+  const nodo = forkNodeIds.join('|');
   console.log(`Uso (da wallet/): npm run cli -- <comando>
 
-  status [alice|bob|issuer|all]
-  create <user|alice|bob>
-  unlock <user|alice|bob>
-  sync <user|alice|bob|issuer>
-  fund <user|alice|bob|issuer> <btc>
+  status [<nodo>|issuer|all]
+  create <user|${nodo}>
+  unlock <user|${nodo}>
+  sync <user|${nodo}|issuer>
+  fund <user|${nodo}|issuer> <btc>
   mine [blocchi]
-  utxos <alice|bob|issuer> [--count N --size sat --fee sat/vB]
-  issue <alice|bob> --ticker TICK --name Nome --amount <unità> [--precision 0]
-  connect <alice|bob> [--peer pubkey@host:porta]
-  channel <alice|bob> --capacity <sat> --asset <rgb:...> --amount <unità> [--peer ...]
-  invoice <alice|bob> --asset <rgb:...> --amount <unità> [--msat 3000000] [--expiry 3600]
+  utxos <${nodo}|issuer> [--count N --size sat --fee sat/vB]
+  issue <${nodo}> --ticker TICK --name Nome --amount <unità> [--precision 0]
+  connect <${nodo}> [--peer pubkey@host:porta]
+  channel <${nodo}> --capacity <sat> --asset <rgb:...> --amount <unità> [--peer ...]
+  invoice <${nodo}> --asset <rgb:...> --amount <unità> [--msat 3000000] [--expiry 3600]
   pay <user> --invoice <lnbcrt...>
-  pay <alice|bob> --invoice <lnbcrt...> --algorithm <ldk_dijkstra|yen|min_cost_flow|multi_objective>
+  pay <${nodo}> --invoice <lnbcrt...> --algorithm <ldk_dijkstra|yen|min_cost_flow|multi_objective>
     multi_objective richiede --weights '{"fee":1,"reliability":2,"cltv":1,"hops":10}'
   issuer create
   issuer status|sync|fund|utxos
@@ -57,7 +65,7 @@ function help() {
   send --from issuer --to <alice|bob> --asset <rgb:...> --amount <unità>
   send --from issuer --invoice <rgb:...> --asset <rgb:...> --amount <unità> [--to alice|bob]
 
-Password da AIRGB_ALICE_PASSWORD, AIRGB_BOB_PASSWORD, AIRGB_ISSUER_PASSWORD, oppure dal prompt.
+Password da AIRGB_<NODO>_PASSWORD, AIRGB_USER_PASSWORD, AIRGB_ISSUER_PASSWORD, oppure dal prompt.
 L'emittente on-chain richiede Node ${nodeVersion}.`);
 }
 
@@ -76,8 +84,8 @@ function btcAmount(value) {
 }
 
 function nodeName(value) {
-  if (value !== 'alice' && value !== 'bob' && value !== 'user') throw new CliError('USAGE', 'Nodo: user, alice o bob');
-  return value;
+  if (value === 'user' || forkNodeIds.includes(value)) return value;
+  throw new CliError('USAGE', `Nodo: user, ${forkNodeIds.join(', ')}`);
 }
 
 function assetIdOf(issued) {
@@ -374,7 +382,7 @@ async function invoiceNode(name, asset, amount, msat, expiry) {
 
 async function receiverName(payer, payee) {
   if (payee) {
-    for (const name of ['alice', 'bob']) {
+    for (const name of [...forkNodeIds, 'user']) {
       try {
         const api = await nodeSession(name);
         const state = await api('/api/wallet/state');
@@ -618,7 +626,7 @@ function relaunch(positionals) {
 }
 
 async function status(target) {
-  const names = target === 'all' ? ['alice', 'bob', 'issuer'] : target ? [target] : ['alice', 'bob'];
+  const names = target === 'all' ? [...forkNodeIds, 'issuer'] : target ? [target] : forkNodeIds;
   const failures = [];
   for (const name of names) {
     try {

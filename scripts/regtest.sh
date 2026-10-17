@@ -25,6 +25,24 @@ reset_regtest() {
     airgb-regtest_bob-data \
     airgb-regtest_alice-mpp-data \
     airgb-regtest_bob-mpp-data \
+    airgb-regtest_carol-topology-data \
+    airgb-regtest_dave-topology-data \
+    airgb-regtest_erin-topology-data \
+    airgb-regtest_frank-topology-data \
+    airgb-regtest_grace-topology-data \
+    airgb-regtest_heidi-topology-data \
+    airgb-regtest_ivan-topology-data \
+    airgb-regtest_judy-topology-data \
+    airgb-regtest_karl-topology-data \
+    airgb-regtest_leo-topology-data \
+    airgb-regtest_mia-topology-data \
+    airgb-regtest_nico-topology-data \
+    airgb-regtest_olive-topology-data \
+    airgb-regtest_paul-topology-data \
+    airgb-regtest_quinn-topology-data \
+    airgb-regtest_ruth-topology-data \
+    airgb-regtest_saul-topology-data \
+    airgb-regtest_tara-topology-data \
     airgb-regtest_user-wallet-data
   rm -rf \
     "$ROOT/wallet/native-data/regtest" \

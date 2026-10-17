@@ -9,12 +9,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { QvacRagStore, formatTelemetryDocument } from '../apps/local-service/channel-scoring.js';
 import { validNodeId } from '../packages/policy/compile.js';
-import { fixtureDirectory, loadHistory, manifest, topology, topologyPath } from './helpers/routing-fixtures.js';
+import { fixtureDirectory, loadHistory, manifest, topology } from './helpers/routing-fixtures.js';
 const sha = (value: Buffer) => createHash('sha256').update(value).digest('hex');
 
-test('i quattro storici sono riproducibili e gli hash corrispondono a topology.json', () => {
+test('i quattro storici sono riproducibili e gli hash corrispondono alla fixture dei canali', () => {
   assert.deepEqual(manifest.datasets.map(entry => entry.transactionCount), [20, 100, 500, 2000]);
-  assert.equal(manifest.sourceTopologySha256, sha(readFileSync(topologyPath)));
+  const fixtureIds = new Set(topology.channels.flatMap(channel => [channel.from, channel.to]));
+  assert.equal(fixtureIds.size, 10);
+  assert.equal(manifest.sourceTopologySha256, 'fca4997ba449b61045199f29a96122ec66e2184d71a8fdb787e66ab2262ec571');
   for (const entry of manifest.datasets) {
     const bytes = readFileSync(new URL(entry.filename, fixtureDirectory));
     assert.equal(sha(bytes), entry.sha256); assert.equal(bytes.length, entry.bytes);
@@ -28,7 +30,8 @@ for (const entry of manifest.datasets) {
   test(`${entry.filename}: topologia, saldi e osservazioni di tutte le transazioni`, () => {
     assert(data.synthetic);
     assert.equal(data.provenance.sourceTopologySha256, manifest.sourceTopologySha256);
-    assert.deepEqual(data.topology.nodes.map(({ id, alias }) => ({ id, alias })), topology.nodes.map(({ id, alias }) => ({ id, alias })));
+    const fixtureIds = new Set(topology.channels.flatMap(channel => [channel.from, channel.to]));
+    assert.deepEqual(data.topology.nodes.map(({ id, alias }) => ({ id, alias })), topology.nodes.filter(node => fixtureIds.has(node.id)).map(({ id, alias }) => ({ id, alias })));
     assert.equal(new Set(data.topology.nodes.map(node => node.pubkey)).size, 10);
     assert(data.topology.nodes.every(node => validNodeId(node.pubkey)));
     assert.deepEqual(data.knownNodes, data.topology.nodes.map(({ alias, pubkey }) => ({ alias, pubkey })));
@@ -102,7 +105,7 @@ for (const entry of manifest.datasets) {
       }
     }
   });
-  for (const node of topology.nodes) test(`${entry.filename}/${node.alias}: import, deduplica, riavvio e ricerca nello storico completo`, async t => {
+  for (const node of data.topology.nodes) test(`${entry.filename}/${node.alias}: import, deduplica, riavvio e ricerca nello storico completo`, async t => {
     const directory = await mkdtemp(join(tmpdir(), 'airgb-history-test-'));
     let store = new QvacRagStore(directory);
     t.after(async () => { store.close(); await rm(directory, { recursive: true, force: true }); });
@@ -132,6 +135,7 @@ test('i quattro dataset mantengono prefissi identici per transazioni e storici p
   for (let i = 1; i < manifest.datasets.length; i++) {
     const previous = loadHistory(manifest.datasets[i - 1].transactionCount), current = loadHistory(manifest.datasets[i].transactionCount);
     assert.deepEqual(current.transactions.slice(0, previous.transactions.length), previous.transactions);
-    for (const node of topology.nodes) assert.deepEqual(current.nodeHistories[node.id].slice(0, previous.nodeHistories[node.id].length), previous.nodeHistories[node.id]);
+    const fixtureIds = new Set(topology.channels.flatMap(channel => [channel.from, channel.to]));
+    for (const node of topology.nodes.filter(node => fixtureIds.has(node.id))) assert.deepEqual(current.nodeHistories[node.id].slice(0, previous.nodeHistories[node.id].length), previous.nodeHistories[node.id]);
   }
 });

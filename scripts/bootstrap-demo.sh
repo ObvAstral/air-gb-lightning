@@ -87,11 +87,11 @@ node_status() {
 }
 
 password_key() {
-  case "$1" in
-    alice) printf 'AIRGB_ALICE_PASSWORD' ;;
-    bob) printf 'AIRGB_BOB_PASSWORD' ;;
-    *) echo "Nodo sconosciuto: $1" >&2; return 1 ;;
-  esac
+  printf 'AIRGB_%s_PASSWORD' "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+}
+
+list_topology_nodes() {
+  node -e 'const fs=require("node:fs"); const topology=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); for (const node of topology.nodes) console.log(`${node.id} ${node.apiPort}`)' "$ROOT/topology.json"
 }
 
 ensure_node() {
@@ -136,8 +136,9 @@ fund_if_needed() {
 }
 
 prepare_utxos() {
+  local count="${1:-4}"
   local out
-  out="$(cli utxos alice)"
+  out="$(cli utxos alice --count "$count")"
   printf '%s\n' "$out"
   if printf '%s\n' "$out" | grep -q 'UTXO richiesti'; then
     echo "Confermo gli UTXO RGB"
@@ -145,6 +146,110 @@ prepare_utxos() {
   else
     echo "UTXO RGB di Alice già pronti"
   fi
+}
+
+ensure_hub_balance() {
+  local min_sat="$1"
+  local sat guard=0
+  sat="$(printf '%s\n' "$(node_status alice)" | field btc)"
+  while [[ "${sat:-0}" -lt "$min_sat" ]]; do
+    guard=$((guard + 1))
+    if [[ "$guard" -gt 4 ]]; then
+      echo "Alice resta sotto ${min_sat} sat (${sat})" >&2
+      exit 1
+    fi
+    echo "Finanzio Alice fino ad almeno ${min_sat} sat (ora ${sat})"
+    cli fund alice 0.02
+    sat="$(printf '%s\n' "$(node_status alice)" | field btc)"
+  done
+  echo "Alice ha ${sat} sat"
+}
+
+connect_hub() {
+  local peer_uri="$1"
+  local out
+  if out="$(cli connect alice --peer "$peer_uri" 2>&1)"; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  printf '%s\n' "$out" >&2
+  if printf '%s\n' "$out" | grep -Eiq 'already|già|duplicate|AlreadyConnected|peer.*exist'; then
+    echo "Alice è già collegata a ${peer_uri}, continuo"
+    return 0
+  fi
+  return 1
+}
+
+mesh_rows() {
+  local asset="$1"
+  node --input-type=module - "$ROOT/topology.json" "$asset" <<'EOF'
+const fs = await import('node:fs');
+const [topologyPath, assetId] = process.argv.slice(2);
+const topology = JSON.parse(fs.readFileSync(topologyPath, 'utf8'));
+const mesh = topology.demoMesh;
+const hub = topology.nodes.find(node => node.id === mesh.hub);
+const origin = 'http://127.0.0.1:5173';
+const session = async port => {
+  const response = await fetch(`http://127.0.0.1:${port}/api/session`, { headers: { origin } });
+  if (!response.ok) throw new Error(`session ${port} HTTP ${response.status}`);
+  const body = await response.json();
+  if (typeof body.token !== 'string') throw new Error(`session ${port} senza token`);
+  return body.token;
+};
+const get = async (port, token, path) => {
+  const response = await fetch(`http://127.0.0.1:${port}${path}`, { headers: { origin, 'x-session-token': token } });
+  if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
+  return response.json();
+};
+const hubToken = await session(hub.apiPort);
+const channels = await get(hub.apiPort, hubToken, '/api/wallet/channels');
+for (const node of topology.nodes) {
+  if (node.id === hub.id) continue;
+  const token = await session(node.apiPort);
+  const summary = await get(node.apiPort, token, '/api/wallet/summary');
+  const pubkey = String(summary.nodeId).toLowerCase();
+  const channel = channels.find(item => item.assetId === assetId && String(item.peerNodeId).toLowerCase() === pubkey);
+  const usable = channel?.isUsable === true ? 'yes' : 'no';
+  const remote = Number(channel?.assetRemoteAmount ?? 0);
+  process.stdout.write(`${node.id}\t${summary.peerUri}\t${usable}\t${remote}\n`);
+}
+EOF
+}
+
+ensure_demo_mesh() {
+  local asset="$1"
+  local mesh capacity amount seed hub_min utxo_batch opened
+  mesh="$(node -e 'const fs=require("node:fs"); const mesh=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).demoMesh; if (!mesh) process.exit(1); process.stdout.write([mesh.capacitySat, mesh.assetAmount, mesh.seedAmount, mesh.hubMinSat, mesh.utxoBatch].join(" "));' "$ROOT/topology.json")"
+  read -r capacity amount seed hub_min utxo_batch <<<"$mesh"
+  ensure_hub_balance "$hub_min"
+  opened=0
+  while IFS=$'\t' read -r name uri usable remote; do
+    if [[ "$usable" != "yes" ]]; then
+      if [[ "$opened" -eq 0 || $((opened % utxo_batch)) -eq 0 ]]; then
+        prepare_utxos "$utxo_batch"
+      fi
+      echo "Apro il canale DEMO verso ${name} (${capacity} sat, ${amount} unità)"
+      connect_hub "$uri"
+      cli channel alice --capacity "$capacity" --asset "$asset" --amount "$amount" --peer "$uri"
+      opened=$((opened + 1))
+    else
+      echo "Canale DEMO verso ${name} già usabile"
+    fi
+    if [[ "${remote:-0}" -ge "$seed" ]]; then
+      echo "Seed DEMO verso ${name} già presente (${remote})"
+      continue
+    fi
+    echo "Pago ${seed} DEMO a ${name}"
+    local invoice_out invoice
+    invoice_out="$(cli invoice "$name" --asset "$asset" --amount "$seed")"
+    printf '%s\n' "$invoice_out"
+    invoice="$(printf '%s\n' "$invoice_out" | awk '$1 == "invoice" && $2 ~ /^lnbcrt/ { print $2; exit }')"
+    if [[ -z "$invoice" ]]; then
+      echo "Invoice DEMO di ${name} non trovata" >&2
+      exit 1
+    fi
+    cli pay alice --invoice "$invoice" --algorithm ldk_dijkstra
+  done < <(mesh_rows "$asset")
 }
 
 ensure_demo_asset() {
@@ -165,34 +270,6 @@ ensure_demo_asset() {
     return 1
   fi
   printf '%s\n' "$asset"
-}
-
-connect_alice() {
-  local out
-  if out="$(cli connect alice 2>&1)"; then
-    printf '%s\n' "$out"
-    return 0
-  fi
-  printf '%s\n' "$out" >&2
-  if printf '%s\n' "$out" | grep -Eiq 'already|già|duplicate|AlreadyConnected|peer.*exist'; then
-    echo "Alice è già collegata a Bob, continuo"
-    return 0
-  fi
-  return 1
-}
-
-ensure_channel() {
-  local asset="$1"
-  local status usable
-  status="$(node_status alice)"
-  usable="$(printf '%s\n' "$status" | channel_usable "$asset")"
-  if [[ "$usable" == "sì" || "$usable" == "si" ]]; then
-    echo "Canale DEMO già usabile"
-    return 0
-  fi
-  connect_alice
-  echo "Apro il canale DEMO (200000 sat, 100 unità)"
-  cli channel alice --capacity 200000 --asset "$asset" --amount 100
 }
 
 start_background() {
@@ -249,19 +326,22 @@ main() {
     echo "Chain già inizializzata (altezza ${height})"
   fi
 
-  echo "Attendo Alice e Bob"
-  wait_http "http://127.0.0.1:8787/api/session"
-  wait_http "http://127.0.0.1:8788/api/session"
+  echo "Attendo i nodi della topologia"
+  while read -r _name port; do
+    wait_http "http://127.0.0.1:${port}/api/session"
+  done < <(list_topology_nodes)
 
-  ensure_node alice
-  ensure_node bob
-  fund_if_needed alice
-  fund_if_needed bob
-  prepare_utxos
+  while read -r name _port; do
+    ensure_node "$name"
+  done < <(list_topology_nodes)
+
+  while read -r name _port; do
+    fund_if_needed "$name"
+  done < <(list_topology_nodes)
 
   local asset
   asset="$(ensure_demo_asset)"
-  ensure_channel "$asset"
+  ensure_demo_mesh "$asset"
 
   mkdir -p "$LOG_DIR"
   start_background ui 5173 npm run dev:ui

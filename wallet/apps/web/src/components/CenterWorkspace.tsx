@@ -505,7 +505,7 @@ export function CenterWorkspace({
     if (!rawPeer.includes('@') && counterpartyNode?.summary?.peerUri?.startsWith(rawPeer)) {
       normalizedPeer = counterpartyNode.summary.peerUri;
     } else if (!rawPeer.includes('@')) {
-      const fallbackPort = counterpartyNode?.port === 8788 ? 9736 : 9735;
+      const fallbackPort = counterpartyNode?.port === 8802 ? 9802 : 9801;
       normalizedPeer = `${rawPeer}@127.0.0.1:${fallbackPort}`;
     }
 

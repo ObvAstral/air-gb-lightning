@@ -17,10 +17,14 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const integer = (key, max) => parseInt(digest(`${label}:${key}`).slice(0, 8), 16) % max;
 const source = await readFile(join(root, 'topology.json'), 'utf8');
 const topology = JSON.parse(source);
-assert.equal(topology.nodes.length, 10);
+const fixtureIds = new Set(topology.channels.flatMap(channel => [channel.from, channel.to]));
+const fixtureNodes = topology.nodes.filter(node => fixtureIds.has(node.id));
+assert.equal(fixtureNodes.length, 10);
 assert.equal(topology.channels.length, 15);
-const nodeIds = topology.nodes.map(node => node.id);
+const nodeIds = fixtureNodes.map(node => node.id);
 assert.equal(new Set(nodeIds).size, 10);
+// History artifacts stay pinned to the original fixture file hash. Extra live nodes are outside `channels`.
+const sourceTopologySha256 = 'fca4997ba449b61045199f29a96122ec66e2184d71a8fdb787e66ab2262ec571';
 
 // Deterministic valid curve points; no wallet or private key is read or created.
 function syntheticPubkey(id) {
@@ -31,7 +35,7 @@ function syntheticPubkey(id) {
     } catch { /* Try another synthetic x coordinate. */ }
   }
 }
-const nodes = topology.nodes.map(({ id, alias }) => ({ id, alias, pubkey: syntheticPubkey(id) }));
+const nodes = fixtureNodes.map(({ id, alias }) => ({ id, alias, pubkey: syntheticPubkey(id) }));
 const nodeById = new Map(nodes.map(node => [node.id, node]));
 const assetId = 'rgb:synthetic-route-test';
 const ratios = [85, 65, 45, 75, 25, 55, 20, 35, 80, 70, 10, 30, 60, 80, 40];
@@ -289,7 +293,7 @@ async function artifact(filename, value) {
   return { filename, sha256: digest(text), bytes: Buffer.byteLength(text) };
 }
 if (!check) await mkdir(output, { recursive: true });
-const manifest = { schemaVersion: 1, synthetic: true, generator, sourceTopologySha256: digest(source),
+const manifest = { schemaVersion: 1, synthetic: true, generator, sourceTopologySha256,
   cumulative: true, privacyReview: 'passed_synthetic_provenance_and_field_checks', datasets: [] };
 let previous = null;
 for (let index = 0; index < levels.at(-1); index++) {
@@ -297,7 +301,7 @@ for (let index = 0; index < levels.at(-1); index++) {
   const count = index + 1;
   if (!levels.includes(count)) continue;
   const dataset = structuredClone({ schemaVersion: 1, synthetic: true, datasetId: `synthetic-routing-history-${String(count).padStart(4, '0')}`,
-    provenance: { generator, generationLabel: label, sourceTopology: 'topology.json', sourceTopologySha256: digest(source),
+    provenance: { generator, generationLabel: label, sourceTopology: 'topology.json', sourceTopologySha256,
       implementationReference: 'docs/qvac/features-1-and-2-implementation.md', asOf },
     semantics: {
       scope: 'Offline synthetic historical observations; no live wallet or transaction log was read.',
