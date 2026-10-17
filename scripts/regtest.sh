@@ -24,11 +24,13 @@ reset_regtest() {
     airgb-regtest_alice-data \
     airgb-regtest_bob-data \
     airgb-regtest_alice-mpp-data \
-    airgb-regtest_bob-mpp-data
+    airgb-regtest_bob-mpp-data \
+    airgb-regtest_user-wallet-data
   rm -rf \
     "$ROOT/wallet/native-data/regtest" \
     "$ROOT/wallet/native-data/wallet" \
     "$ROOT/wallet/native-data/peer-wallet" \
+    "$ROOT/wallet/native-data/user-wallet" \
     "$ROOT/wallet/native-data"/e2e-mpp-*
   echo "Reset completato. Apri una shell nuova, poi da wallet/: node infra/regtest/setup.mjs"
 }

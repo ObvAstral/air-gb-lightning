@@ -76,6 +76,34 @@ services:
       - "127.0.0.1:9736:9736"
     volumes:
       - bob-mpp-data:/data
+  user:
+    image: airgb-regtest-user
+    build:
+      context: ./wallet
+      dockerfile: Dockerfile.user
+    environment:
+      BITCOIND_RPC_USER: user
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:?Set BITCOIND_RPC_PASSWORD locally}
+      BITCOIND_RPC_HOST: bitcoind
+      BITCOIND_RPC_PORT: "18443"
+      INDEXER_URL: tcp://electrs:50001
+      RGB_PROXY_ENDPOINT: rpc://proxy:3000/json-rpc
+      AIRGB_DATA_DIR: /data
+      BIND_HOST: 0.0.0.0
+      AIRGB_WEB_PORT: "5173"
+      ENABLE_REGTEST_SEND: "1"
+      PORT: "8789"
+      AIRGB_USER_PEER_PORT: "9739"
+      AIRGB_USER_ANNOUNCE_HOST: user
+    depends_on:
+      - bitcoind
+      - electrs
+      - proxy
+    ports:
+      - "127.0.0.1:8789:8789"
+      - "127.0.0.1:9739:9739"
+    volumes:
+      - user-wallet-data:/data
 volumes:
   bitcoin-data:
   electrs-data:
@@ -84,3 +112,4 @@ volumes:
   # Separate state: the fork uses its internal signer instead of UTEXO/VLS.
   alice-mpp-data:
   bob-mpp-data:
+  user-wallet-data:

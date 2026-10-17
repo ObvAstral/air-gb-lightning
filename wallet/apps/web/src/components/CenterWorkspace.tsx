@@ -90,6 +90,7 @@ export type CenterWorkspaceProps = {
   nodes: RegtestNodeSnapshot[];
   activeNode: RegtestNodeSnapshot;
   counterpartyNode: RegtestNodeSnapshot | undefined;
+  userWallet?: boolean;
   onSelectActiveNode: (nodeId: string) => void;
   workspaceTab: WorkspaceTab;
   onChangeWorkspaceTab: (tab: WorkspaceTab) => void;
@@ -194,6 +195,7 @@ export function CenterWorkspace({
   nodes,
   activeNode,
   counterpartyNode,
+  userWallet = false,
   onSelectActiveNode,
   workspaceTab,
   onChangeWorkspaceTab,
@@ -715,13 +717,13 @@ export function CenterWorkspace({
 
       {/* B. SELETTORE MODALITÀ OPERATIVA (TAB BAR CENTRALE) */}
       <nav className="workspace-mode-tabs" aria-label="Modalità Operativa">
-        <button
+        {!userWallet && <button
           type="button"
           className={`mode-tab-btn tab-qvac ${workspaceTab === 'chat' ? 'active' : ''}`}
           onClick={() => onChangeWorkspaceTab('chat')}
         >
           💬 QVAC AI Copilot (Chat)
-        </button>
+        </button>}
         <button
           type="button"
           className={`mode-tab-btn tab-manual ${workspaceTab === 'manual' ? 'active' : ''}`}
@@ -729,14 +731,14 @@ export function CenterWorkspace({
         >
           ✍️ Inserimento Manuale TX & Operazioni
         </button>
-        <button
+        {!userWallet && <button
           type="button"
           className={`mode-tab-btn tab-split ${workspaceTab === 'split' ? 'active' : ''}`}
           onClick={() => onChangeWorkspaceTab('split')}
           title="Mostra Chat QVAC e Inserimento Manuale affiancati"
         >
           ⚡ Vista Split (Chat + Manuale)
-        </button>
+        </button>}
       </nav>
 
       {qvacError && (
@@ -747,7 +749,7 @@ export function CenterWorkspace({
 
       <div className={`workspace-panes ${workspaceTab === 'split' ? 'panes-split' : ''}`}>
         {/* C. DETTAGLIO TAB 1: QVAC AI COPILOT (CHAT) */}
-        {(workspaceTab === 'chat' || workspaceTab === 'split') && (
+        {( !userWallet && (workspaceTab === 'chat' || workspaceTab === 'split')) && (
           <section className="workspace-panel chat-panel">
             <div className="panel-header">
               <div>
@@ -1176,6 +1178,9 @@ export function CenterWorkspace({
                 </div>
 
                 {/* 2. Configurazione Algoritmo di Routing */}
+                {userWallet ? (
+                  <p className="notice">I planner MPP e QVAC restano sui nodi della fork. Questo wallet paga senza scegliere l&apos;algoritmo.</p>
+                ) : (
                 <div className="form-card">
                   <div className="card-header-row">
                     <h3>2. Configurazione Algoritmo di Routing</h3>
@@ -1275,8 +1280,10 @@ export function CenterWorkspace({
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* 3. Form Manuale Vincoli (QVAC Constraints Compiler) */}
+                {!userWallet && (
                 <div className="form-card">
                   <div className="card-header-row">
                     <h3>3. Form Manuale Vincoli (QVAC Constraints Compiler)</h3>
@@ -1469,6 +1476,7 @@ export function CenterWorkspace({
                     protocollo.
                   </p>
                 </div>
+                )}
 
                 {/* 4. Flusso di Esecuzione Sicuro a 2 Step */}
                 <div className="form-card execution-card">

@@ -1,0 +1,14 @@
+FROM node:24.19.0-trixie
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gpg ca-certificates curl bash \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+RUN npm ci --ignore-scripts \
+    && cd node_modules/@utexo/rgb-lightning-node-nodejs \
+    && bash scripts/download-libs.sh
+
+EXPOSE 8789 9739
+CMD ["node", "--import", "tsx", "apps/local-service/user-server.ts"]

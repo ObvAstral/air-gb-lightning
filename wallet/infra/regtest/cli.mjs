@@ -15,7 +15,7 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const issuerDir = join(walletRoot, 'native-data/regtest/issuer');
 const nodeVersion = '24.19.0';
 const origin = 'http://127.0.0.1:5173';
-const nodes = { alice: 'http://127.0.0.1:8787', bob: 'http://127.0.0.1:8788' };
+const nodes = { alice: 'http://127.0.0.1:8787', bob: 'http://127.0.0.1:8788', user: 'http://127.0.0.1:8789' };
 const tickerPattern = /^[A-Z][A-Z0-9]{1,7}$/;
 const passwords = new Map();
 const sessions = new Map();
@@ -29,7 +29,7 @@ class CliError extends Error {
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const other = name => name === 'alice' ? 'bob' : 'alice';
-const passwordEnv = name => name === 'alice' ? 'AIRGB_ALICE_PASSWORD' : name === 'bob' ? 'AIRGB_BOB_PASSWORD' : 'AIRGB_ISSUER_PASSWORD';
+const passwordEnv = name => name === 'alice' ? 'AIRGB_ALICE_PASSWORD' : name === 'bob' ? 'AIRGB_BOB_PASSWORD' : name === 'user' ? 'AIRGB_USER_PASSWORD' : 'AIRGB_ISSUER_PASSWORD';
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
 const line = (label, value) => console.log(`${label.padEnd(12)}${value ?? ''}`);
 
@@ -37,16 +37,17 @@ function help() {
   console.log(`Uso (da wallet/): npm run cli -- <comando>
 
   status [alice|bob|issuer|all]
-  create <alice|bob>
-  unlock <alice|bob>
-  sync <alice|bob|issuer>
-  fund <alice|bob|issuer> <btc>
+  create <user|alice|bob>
+  unlock <user|alice|bob>
+  sync <user|alice|bob|issuer>
+  fund <user|alice|bob|issuer> <btc>
   mine [blocchi]
   utxos <alice|bob|issuer> [--count N --size sat --fee sat/vB]
   issue <alice|bob> --ticker TICK --name Nome --amount <unità> [--precision 0]
   connect <alice|bob> [--peer pubkey@host:porta]
   channel <alice|bob> --capacity <sat> --asset <rgb:...> --amount <unità> [--peer ...]
   invoice <alice|bob> --asset <rgb:...> --amount <unità> [--msat 3000000] [--expiry 3600]
+  pay <user> --invoice <lnbcrt...>
   pay <alice|bob> --invoice <lnbcrt...> --algorithm <ldk_dijkstra|yen|min_cost_flow|multi_objective>
     multi_objective richiede --weights '{"fee":1,"reliability":2,"cltv":1,"hops":10}'
   issuer create
@@ -75,7 +76,7 @@ function btcAmount(value) {
 }
 
 function nodeName(value) {
-  if (value !== 'alice' && value !== 'bob') throw new CliError('USAGE', 'Nodo: alice o bob');
+  if (value !== 'alice' && value !== 'bob' && value !== 'user') throw new CliError('USAGE', 'Nodo: user, alice o bob');
   return value;
 }
 
@@ -664,7 +665,9 @@ async function main() {
   if (command === 'channel') return channelNode(nodeName(target), String(positiveInt(values.capacity, 'Capacità')), requireAsset(values.asset), String(positiveInt(values.amount, 'Importo asset')), values.peer);
   if (command === 'invoice') return invoiceNode(nodeName(target), requireAsset(values.asset), positiveInt(values.amount, 'Importo asset'), values.msat === undefined ? 3000000 : positiveInt(values.msat, 'msat'), values.expiry === undefined ? 3600 : positiveInt(values.expiry, 'Scadenza'));
   if (command === 'pay') {
+    const payer = nodeName(target);
     if (typeof values.invoice !== 'string') throw new CliError('USAGE', 'Manca --invoice');
+    if (payer === 'user') return payNode(payer, values.invoice, { algorithm: 'ldk_dijkstra' });
     if (!ROUTING_ALGORITHMS.includes(values.algorithm)) throw new CliError('USAGE', `Specificare --algorithm: ${ROUTING_ALGORITHMS.join(', ')}`);
     if ((values.algorithm === 'multi_objective') !== (values.weights !== undefined)) throw new CliError('USAGE', '--weights è richiesto solo con --algorithm multi_objective');
     const routing = { algorithm: values.algorithm };
@@ -672,7 +675,7 @@ async function main() {
       try { routing.weights = JSON.parse(values.weights); }
       catch { throw new CliError('USAGE', '--weights deve essere un oggetto JSON con fee, reliability, cltv e hops'); }
     }
-    return payNode(nodeName(target), values.invoice, routing);
+    return payNode(payer, values.invoice, routing);
   }
   if (command === 'issuer') return issuerDispatch(target, extra, values, count, fee);
   if (command === 'send') {

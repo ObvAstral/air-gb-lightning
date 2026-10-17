@@ -33,7 +33,7 @@ import {
   type NodeSummaryInfo,
   type RegtestNodeSnapshot,
 } from './components/RightNodesInspector.js';
-import { ALICE_BASE_URL, BOB_BASE_URL, useNodeSession } from './components/node-client.js';
+import { ALICE_BASE_URL, BOB_BASE_URL, USER_BASE_URL, useNodeSession } from './components/node-client.js';
 
 const INITIAL_EXTRACTED: ExtractedConstraints = {
   schemaVersion: '1.0',
@@ -142,13 +142,15 @@ function detectSetupDraftFromPrompt(
   return undefined;
 }
 
+type NodeId = 'user' | 'alice' | 'bob';
+
 export function App() {
-  // Sessions for Alice (:8787) and Bob (:8788) via useNodeSession
+  const userSession = useNodeSession(USER_BASE_URL);
   const aliceSession = useNodeSession(ALICE_BASE_URL);
   const bobSession = useNodeSession(BOB_BASE_URL);
 
-  const [activeNodeId, setActiveNodeId] = useState<'alice' | 'bob'>('alice');
-  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('chat');
+  const [activeNodeId, setActiveNodeId] = useState<NodeId>('user');
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>('manual');
   const [manualSubTab, setManualSubTab] = useState<ManualSubTab>('send');
 
   // Health & Chain state
@@ -160,7 +162,8 @@ export function App() {
   const [chainError, setChainError] = useState('');
 
   // Node mutable states
-  const [nodeMap, setNodeMap] = useState<Record<'alice' | 'bob', NodeMutableData>>({
+  const [nodeMap, setNodeMap] = useState<Record<NodeId, NodeMutableData>>({
+    user: { ...EMPTY_NODE_DATA },
     alice: { ...EMPTY_NODE_DATA },
     bob: { ...EMPTY_NODE_DATA },
   });
@@ -200,7 +203,7 @@ export function App() {
     setQvacBusy(false);
   }, []);
 
-  const patchNodeData = useCallback((id: 'alice' | 'bob', patch: Partial<NodeMutableData>) => {
+  const patchNodeData = useCallback((id: NodeId, patch: Partial<NodeMutableData>) => {
     setNodeMap(prev => ({
       ...prev,
       [id]: { ...prev[id], ...patch },
@@ -208,20 +211,20 @@ export function App() {
   }, []);
 
   const getBaseUrlForNode = useCallback(
-    (id: string) => (id === 'bob' ? BOB_BASE_URL : ALICE_BASE_URL),
+    (id: string) => (id === 'user' ? USER_BASE_URL : id === 'bob' ? BOB_BASE_URL : ALICE_BASE_URL),
     [],
   );
 
   const getSessionForNode = useCallback(
-    (id: string) => (id === 'bob' ? bobSession : aliceSession),
-    [aliceSession, bobSession],
+    (id: string) => (id === 'user' ? userSession : id === 'bob' ? bobSession : aliceSession),
+    [userSession, aliceSession, bobSession],
   );
 
   // Refresh health via Vite proxy /api/health
   const refreshHealth = useCallback(async () => {
     setHealthLoading(true);
     try {
-      const response = await fetch('/api/health', { cache: 'no-store' });
+      const response = await fetch(`${USER_BASE_URL}/api/health`, { cache: 'no-store' });
       if (response.ok) {
         const data = (await response.json()) as ServiceHealth;
         setHealth(data);
@@ -235,8 +238,8 @@ export function App() {
 
   // Refresh single node state, summary, channels, assets, balances, history
   const refreshNodeSnapshot = useCallback(
-    async (id: 'alice' | 'bob') => {
-      const session = id === 'bob' ? bobSession : aliceSession;
+    async (id: NodeId) => {
+      const session = id === 'user' ? userSession : id === 'bob' ? bobSession : aliceSession;
       if (!session.token) return;
 
       patchNodeData(id, { busy: true, error: '' });
@@ -292,7 +295,7 @@ export function App() {
         });
       }
     },
-    [aliceSession.api, aliceSession.token, bobSession.api, bobSession.token, patchNodeData],
+    [userSession.api, userSession.token, aliceSession.api, aliceSession.token, bobSession.api, bobSession.token, patchNodeData],
   );
 
   // Read chain height via Alice
@@ -311,6 +314,10 @@ export function App() {
   useEffect(() => {
     void refreshHealth();
   }, [refreshHealth]);
+
+  useEffect(() => {
+    if (userSession.token) void refreshNodeSnapshot('user');
+  }, [userSession.token, refreshNodeSnapshot]);
 
   useEffect(() => {
     if (aliceSession.token) {
@@ -338,7 +345,7 @@ export function App() {
         });
         setChainHeight(res.height);
         setChainMessage(`Minati +${res.mined} blocchi. Nuova altezza: #${res.height}.`);
-        await Promise.all([refreshNodeSnapshot('alice'), refreshNodeSnapshot('bob')]);
+        await Promise.all([refreshNodeSnapshot('user'), refreshNodeSnapshot('alice'), refreshNodeSnapshot('bob')]);
       } catch (err) {
         setChainError((err as Error).message);
       } finally {
@@ -351,7 +358,7 @@ export function App() {
   // Sync a single node
   const handleSyncNode = useCallback(
     async (nodeId: string) => {
-      const id = nodeId === 'bob' ? 'bob' : 'alice';
+      const id: NodeId = nodeId === 'user' || nodeId === 'bob' ? nodeId : 'alice';
       const session = getSessionForNode(id);
       if (!session.token) return;
       patchNodeData(id, { busy: true, error: '', notice: '' });
@@ -373,6 +380,9 @@ export function App() {
     setChainMessage('');
     try {
       const tasks: Promise<void>[] = [];
+      if (userSession.token && nodeMap.user.state?.node === 'ready') {
+        tasks.push(userSession.api('/api/wallet/sync', {}).then(() => undefined));
+      }
       if (aliceSession.token && nodeMap.alice.state?.node === 'ready') {
         tasks.push(aliceSession.api('/api/wallet/sync', {}).then(() => undefined));
       }
@@ -381,6 +391,7 @@ export function App() {
       }
       await Promise.all(tasks);
       await Promise.all([
+        refreshNodeSnapshot('user'),
         refreshNodeSnapshot('alice'),
         refreshNodeSnapshot('bob'),
         readHeight(),
@@ -818,7 +829,7 @@ export function App() {
               : c,
           ),
         );
-        await Promise.all([refreshNodeSnapshot('alice'), refreshNodeSnapshot('bob')]);
+        await Promise.all([refreshNodeSnapshot('user'), refreshNodeSnapshot('alice'), refreshNodeSnapshot('bob')]);
       } catch (err) {
         setChatCards(prev =>
           prev.map(c =>
@@ -884,7 +895,7 @@ export function App() {
               : c,
           ),
         );
-        await refreshNodeSnapshot(card.nodeId === 'bob' ? 'bob' : 'alice');
+        await refreshNodeSnapshot(card.nodeId === 'user' || card.nodeId === 'bob' ? card.nodeId : 'alice');
       } catch (err) {
         setChatCards(prev =>
           prev.map(c =>
@@ -999,7 +1010,7 @@ export function App() {
       id: preparedIntent.id,
     });
     setPreparedIntent(updated);
-    await Promise.all([refreshNodeSnapshot('alice'), refreshNodeSnapshot('bob')]);
+    await Promise.all([refreshNodeSnapshot('user'), refreshNodeSnapshot('alice'), refreshNodeSnapshot('bob')]);
   }, [activeNodeId, getSessionForNode, preparedIntent, refreshNodeSnapshot]);
 
   const handleRefreshPaymentIntent = useCallback(async () => {
@@ -1071,14 +1082,8 @@ export function App() {
 
   // Use generated invoice immediately as payment invoice on the other node
   const handleUseInvoiceForPayment = useCallback(
-    (invoice: string, targetPayerNodeId?: string) => {
-      const nextNode =
-        targetPayerNodeId === 'alice' || targetPayerNodeId === 'bob'
-          ? targetPayerNodeId
-          : activeNodeId === 'alice'
-            ? 'bob'
-            : 'alice';
-      setActiveNodeId(nextNode);
+    (invoice: string, _targetPayerNodeId?: string) => {
+      setActiveNodeId('user');
       setPaymentDraft(prev => ({
         ...prev,
         invoice,
@@ -1089,7 +1094,7 @@ export function App() {
       setWorkspaceTab('manual');
       setManualSubTab('send');
     },
-    [activeNodeId],
+    [],
   );
 
   // Manual Sub-tab 3: Connect Peer & Open Channel
@@ -1210,6 +1215,15 @@ export function App() {
   const nodesList: RegtestNodeSnapshot[] = useMemo(
     () => [
       {
+        id: 'user',
+        label: 'Wallet',
+        port: 8789,
+        baseUrl: USER_BASE_URL,
+        accent: 'emerald',
+        offline: userSession.offline,
+        ...nodeMap.user,
+      },
+      {
         id: 'alice',
         label: 'Alice',
         port: 8787,
@@ -1228,12 +1242,12 @@ export function App() {
         ...nodeMap.bob,
       },
     ],
-    [aliceSession.offline, bobSession.offline, nodeMap.alice, nodeMap.bob],
+    [userSession.offline, aliceSession.offline, bobSession.offline, nodeMap.user, nodeMap.alice, nodeMap.bob],
   );
 
   const activeNodeSnapshot =
     nodesList.find(n => n.id === activeNodeId) ?? nodesList[0];
-  const counterpartySnapshot = nodesList.find(n => n.id !== activeNodeId);
+  const counterpartySnapshot = nodesList.find(n => n.id === 'alice') ?? nodesList.find(n => n.id !== activeNodeId);
 
   return (
     <div className="app-shell">
@@ -1255,8 +1269,8 @@ export function App() {
           activeNodePort={activeNodeSnapshot.port}
           activeNodeOffline={activeNodeSnapshot.offline}
           activeNodeState={activeNodeSnapshot.state}
-          onSelectActiveNode={id => setActiveNodeId(id === 'bob' ? 'bob' : 'alice')}
-          availableNodes={nodesList.map(n => ({ id: n.id, label: n.label, port: n.port }))}
+          onSelectActiveNode={() => setActiveNodeId('user')}
+          availableNodes={[{ id: 'user', label: 'Wallet', port: 8789 }]}
           onCreateKeystore={handleCreateKeystore}
           onImportKeystore={handleImportKeystore}
           onUnlockNode={handleUnlockNode}
@@ -1268,7 +1282,8 @@ export function App() {
           nodes={nodesList}
           activeNode={activeNodeSnapshot}
           counterpartyNode={counterpartySnapshot}
-          onSelectActiveNode={id => setActiveNodeId(id === 'bob' ? 'bob' : 'alice')}
+          userWallet
+          onSelectActiveNode={() => setActiveNodeId('user')}
           workspaceTab={workspaceTab}
           onChangeWorkspaceTab={setWorkspaceTab}
           manualSubTab={manualSubTab}
@@ -1318,7 +1333,7 @@ export function App() {
         <RightNodesInspector
           nodes={nodesList}
           activeNodeId={activeNodeSnapshot.id}
-          onSelectActiveNode={id => setActiveNodeId(id === 'bob' ? 'bob' : 'alice')}
+          onSelectActiveNode={() => setActiveNodeId('user')}
           onSyncNode={handleSyncNode}
           onQuickGenerateBobInvoice={handleQuickGenerateBobInvoice}
           onUseInvoiceForPayment={handleUseInvoiceForPayment}

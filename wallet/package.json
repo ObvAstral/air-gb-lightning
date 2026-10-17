@@ -10,6 +10,7 @@
     "dev": "npm run native:build && concurrently -k \"npm run dev -w @airgb/service\" \"npm run dev -w @airgb/web\"",
     "dev:regtest": "npm run native:build && concurrently -k \"npm run dev:regtest -w @airgb/service\" \"npm run dev -w @airgb/web\"",
     "dev:peer": "npm run native:build && node infra/regtest/run-peer.mjs",
+    "dev:user": "npm run dev:user -w @airgb/service",
     "dev:ui": "npm run dev -w @airgb/web",
     "build": "npm run build -w @airgb/web",
     "typecheck": "tsc --noEmit -p tsconfig.json",

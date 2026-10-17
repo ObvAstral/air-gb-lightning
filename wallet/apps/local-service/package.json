@@ -4,9 +4,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch server.ts",
-    "dev:regtest": "node --env-file=../../native-data/regtest/wallet.env --import tsx --watch server.ts"
+    "dev:regtest": "node --env-file=../../native-data/regtest/wallet.env --import tsx --watch server.ts",
+    "dev:user": "node --env-file=../../native-data/regtest/wallet.env --import tsx user-server.ts"
   },
   "dependencies": {
+    "@utexo/rgb-lightning-node-nodejs": "0.1.0-beta.11",
+    "@utexo/wdk-rgb-lightning": "0.1.0-beta.15",
     "ajv": "8.20.0",
     "bip39": "3.1.0"
   }

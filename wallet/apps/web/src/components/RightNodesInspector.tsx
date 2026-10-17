@@ -173,7 +173,7 @@ export function RightNodesInspector({
               <div className="node-card-header">
                 <div className="node-title-group">
                   <span className={`node-avatar avatar-${node.accent}`}>
-                    {node.accent === 'purple' ? '🟣' : '🔵'}
+                    {node.accent === 'emerald' ? '🟢' : node.accent === 'purple' ? '🟣' : '🔵'}
                   </span>
                   <div>
                     <div className="node-name-row">
@@ -210,7 +210,7 @@ export function RightNodesInspector({
                 </div>
 
                 <div className="node-header-actions">
-                  {!isActive && (
+                  {!isActive && node.id === 'user' && (
                     <button
                       type="button"
                       className="btn-secondary btn-xs"
@@ -300,7 +300,7 @@ export function RightNodesInspector({
                         className="btn-qvac btn-xs full-width"
                         onClick={() => onUseInvoiceForPayment(node.lastInvoice, 'alice')}
                       >
-                        ↗ Carica su Alice per Pagamento
+                        ↗ Carica sul wallet
                       </button>
                     </div>
                   )}

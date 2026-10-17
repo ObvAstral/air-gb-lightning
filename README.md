@@ -156,8 +156,23 @@ Stops the containers and deletes the chain, the Electrs index, every Alice and B
 volume (`alice-data`, `bob-data`, `alice-mpp-data`, `bob-mpp-data`), the on-chain
 issuer, the host wallet directories, and `wallet.env`.
 The node image stays, so the next startup does not recompile Rust.
+`reset` also deletes the `user-wallet-data` volume and `wallet/native-data/user-wallet`.
 Open a new shell so exported passwords and `BITCOIND_RPC_PASSWORD` are gone,
 then repeat Startup from `node infra/regtest/setup.mjs`.
+
+The user wallet is a third container, `user`, image `airgb-regtest-user`.
+It does not compile the fork. The image only installs Node, GnuPG, and the Linux
+build of `@utexo/wdk-rgb-lightning`. `docker compose up -d` builds it once;
+later starts reuse the image. It listens on `http://127.0.0.1:8789` and announces
+`user:9739` on the Compose network, so Alice and Bob can open a channel to it.
+Payments from this wallet do not take `--algorithm`. MPP planners stay on Alice and Bob.
+
+To run the same wallet on the host instead of the container:
+
+```bash
+bash node_modules/@utexo/rgb-lightning-node-nodejs/scripts/download-libs.sh
+npm run dev:user
+```
 
 ## Testing
 

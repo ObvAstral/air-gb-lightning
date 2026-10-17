@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export const ALICE_BASE_URL = 'http://127.0.0.1:8787';
 export const BOB_BASE_URL = 'http://127.0.0.1:8788';
+export const USER_BASE_URL = 'http://127.0.0.1:8789';
 
 export function useNodeSession(baseUrl: string) {
   const [token, setToken] = useState('');
