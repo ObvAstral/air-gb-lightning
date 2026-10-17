@@ -9,7 +9,7 @@ type RpcPayload = { error?: { code?: number; message?: string } | null; result?:
 async function bitcoinRpc(method: string, params: unknown[], wallet = ''): Promise<unknown> {
   const user = process.env.BITCOIND_RPC_USER;
   const password = process.env.BITCOIND_RPC_PASSWORD;
-  if (!user || !password) throw new WalletError('REGTEST_CONFIG_MISSING', 'Configurazione RPC Bitcoin mancante');
+  if (!user || !password) throw new WalletError('REGTEST_CONFIG_MISSING', 'Missing Bitcoin RPC configuration');
   const host = process.env.BITCOIND_RPC_HOST ?? '127.0.0.1';
   const port = process.env.BITCOIND_RPC_PORT ?? '18443';
   const url = `http://${host}:${port}${wallet ? `/wallet/${wallet}` : ''}`;
@@ -21,12 +21,12 @@ async function bitcoinRpc(method: string, params: unknown[], wallet = ''): Promi
       body: JSON.stringify({ jsonrpc: '1.0', id: 'airgb-chain', method, params }),
     });
   } catch {
-    throw new WalletError('BITCOIN_RPC', 'Nodo Bitcoin non raggiungibile');
+    throw new WalletError('BITCOIN_RPC', 'Bitcoin node unreachable');
   }
   const data = await response.json() as RpcPayload;
   if (!response.ok || data.error) {
     if (data.error?.code !== undefined && MISSING_WALLET_CODES.has(data.error.code)) {
-      throw new WalletError('MINER_WALLET_MISSING', 'Wallet miner assente: eseguire ./scripts/regtest.sh init-chain');
+      throw new WalletError('MINER_WALLET_MISSING', 'Miner wallet missing: run ./scripts/regtest.sh init-chain');
     }
     throw new WalletError('BITCOIN_RPC', data.error?.message ?? `HTTP ${response.status}`);
   }
@@ -35,14 +35,14 @@ async function bitcoinRpc(method: string, params: unknown[], wallet = ''): Promi
 
 export async function chainHeight(): Promise<number> {
   const height = await bitcoinRpc('getblockcount', []);
-  if (typeof height !== 'number' || !Number.isSafeInteger(height) || height < 0) throw new WalletError('BITCOIN_RPC', 'Altezza blocco non valida');
+  if (typeof height !== 'number' || !Number.isSafeInteger(height) || height < 0) throw new WalletError('BITCOIN_RPC', 'Invalid block height');
   return height;
 }
 
 export async function mineBlocks(blocks: number): Promise<{ mined: number; height: number }> {
-  if (!Number.isSafeInteger(blocks) || blocks < 1 || blocks > MAX_MINE_BLOCKS) throw new WalletError('INVALID_BLOCK_COUNT', 'Blocchi da minare: da 1 a 6');
+  if (!Number.isSafeInteger(blocks) || blocks < 1 || blocks > MAX_MINE_BLOCKS) throw new WalletError('INVALID_BLOCK_COUNT', 'Blocks to mine must be between 1 and 6');
   const address = await bitcoinRpc('getnewaddress', [], MINER_WALLET);
-  if (typeof address !== 'string' || !address.startsWith('bcrt1')) throw new WalletError('BITCOIN_RPC', 'Indirizzo miner non valido');
+  if (typeof address !== 'string' || !address.startsWith('bcrt1')) throw new WalletError('BITCOIN_RPC', 'Invalid miner address');
   await bitcoinRpc('generatetoaddress', [blocks, address], MINER_WALLET);
   return { mined: blocks, height: await chainHeight() };
 }

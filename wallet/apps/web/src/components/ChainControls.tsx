@@ -20,7 +20,7 @@ export function ChainControls() {
     try {
       const mined = await api<ChainStatus & { mined: number }>('/api/chain/mine', { blocks: 1 });
       setHeight(mined.height);
-      setMessage(`Minato 1 blocco. Altezza ${mined.height}.`);
+      setMessage(`Mined 1 block. Height ${mined.height}.`);
     } catch (error) {
       setMessage((error as Error).message);
     } finally {
@@ -30,10 +30,10 @@ export function ChainControls() {
 
   return <section>
     <h2>Regtest</h2>
-    <p>bitcoind, electrs e proxy sono i container condivisi. Il bottone mina sul wallet <code>miner</code>.</p>
-    {offline && <p className="error" role="alert">Alice non è raggiungibile su {ALICE_BASE_URL}.</p>}
-    <p><strong>Altezza:</strong> {height ?? 'non letta'}</p>
-    <button disabled={busy || !token} onClick={() => void readHeight().catch(error => setMessage((error as Error).message))}>Leggi altezza</button>
+    <p>bitcoind, electrs and proxy are the shared containers. The button mines to the <code>miner</code> wallet.</p>
+    {offline && <p className="error" role="alert">Alice is unreachable at {ALICE_BASE_URL}.</p>}
+    <p><strong>Height:</strong> {height ?? 'not read'}</p>
+    <button disabled={busy || !token} onClick={() => void readHeight().catch(error => setMessage((error as Error).message))}>Read height</button>
     <button disabled={busy || !token} onClick={() => void mineOneBlock()}>Mine 1 Block</button>
     {message && <p role="status">{message}</p>}
   </section>;

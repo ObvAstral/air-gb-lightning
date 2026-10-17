@@ -59,56 +59,56 @@ export function WalletCard({ label, baseUrl }: WalletCardProps) {
   return <section>
     <h2>{label}</h2>
     <p>{baseUrl}</p>
-    {offline && <p className="error" role="alert">Nodo non raggiungibile.</p>}
-    <p><strong>Keystore:</strong> {state?.keystoreExists ? 'presente' : 'da creare'} · <strong>Nodo:</strong> {state?.node ?? 'non disponibile'} · <strong>Invio:</strong> {state?.sendEnabled ? 'abilitato' : 'disabilitato'}</p>
+    {offline && <p className="error" role="alert">Node unreachable.</p>}
+    <p><strong>Keystore:</strong> {state?.keystoreExists ? 'present' : 'not created'} · <strong>Node:</strong> {state?.node ?? 'unavailable'} · <strong>Send:</strong> {state?.sendEnabled ? 'enabled' : 'disabled'}</p>
     {!state?.keystoreExists && <div>
-      <label>Password del keystore<input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+      <label>Keystore password<input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
       <button disabled={busy || !token || password.length < 12} onClick={() => void action(async () => {
         const created = await api<{ recoveryPhrase: string | null }>('/api/wallet/create', { password });
         setRecovery(created.recoveryPhrase);
         setPassword('');
         await refresh();
-      })}>Crea wallet</button>
-      <label>Importa frase BIP39 di 12 parole<textarea value={mnemonic} onChange={event => setMnemonic(event.target.value)} autoComplete="off" /></label>
+      })}>Create wallet</button>
+      <label>Import 12-word BIP39 phrase<textarea value={mnemonic} onChange={event => setMnemonic(event.target.value)} autoComplete="off" /></label>
       <button disabled={busy || !token || password.length < 12 || !mnemonic.trim()} onClick={() => void action(async () => {
         await api('/api/wallet/import', { password, mnemonic });
         setMnemonic('');
         setPassword('');
         await refresh();
-      })}>Importa wallet</button>
+      })}>Import wallet</button>
     </div>}
-    {recovery && <div className="notice"><strong>Salva la frase di recupero ora.</strong><p>{recovery}</p><button onClick={() => setRecovery(null)}>Ho salvato la frase</button></div>}
+    {recovery && <div className="notice"><strong>Save the recovery phrase now.</strong><p>{recovery}</p><button onClick={() => setRecovery(null)}>I have saved the phrase</button></div>}
     {state?.keystoreExists && state.node !== 'ready' && <div>
-      <label>Password per sbloccare<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
-      <button disabled={busy || !token || !password} onClick={() => void action(async () => { await api('/api/wallet/unlock', { password }); setPassword(''); await refresh(); })}>Sblocca nodo</button>
+      <label>Unlock password<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+      <button disabled={busy || !token || !password} onClick={() => void action(async () => { await api('/api/wallet/unlock', { password }); setPassword(''); await refresh(); })}>Unlock node</button>
     </div>}
     {summary && <dl>
       <dt>Node ID</dt><dd>{summary.nodeId}</dd>
-      <dt>Indirizzo BTC</dt><dd>{summary.address}</dd>
-      <dt>BTC spendibili</dt><dd>{summary.btcSpendableSat} sat</dd>
+      <dt>BTC Address</dt><dd>{summary.address}</dd>
+      <dt>Spendable BTC</dt><dd>{summary.btcSpendableSat} sat</dd>
       {summary.peerUri && <><dt>Peer URI</dt><dd>{summary.peerUri}</dd></>}
     </dl>}
     {state?.node === 'ready' && <>
-      <button disabled={busy} onClick={() => void action(async () => { await api('/api/wallet/sync', {}); await refresh(); })}>Aggiorna</button>
-      <h3>UTXO RGB</h3>
+      <button disabled={busy} onClick={() => void action(async () => { await api('/api/wallet/sync', {}); await refresh(); })}>Refresh</button>
+      <h3>RGB UTXOs</h3>
       <div className="row">
-        <label>Numero<input value={utxoCount} onChange={event => setUtxoCount(event.target.value)} inputMode="numeric" /></label>
+        <label>Count<input value={utxoCount} onChange={event => setUtxoCount(event.target.value)} inputMode="numeric" /></label>
         <label>Sat<input value={utxoSizeSat} onChange={event => setUtxoSizeSat(event.target.value)} inputMode="numeric" /></label>
         <label>sat/vB<input value={utxoFeeRate} onChange={event => setUtxoFeeRate(event.target.value)} inputMode="numeric" /></label>
       </div>
       <button disabled={busy} onClick={() => void action(async () => {
         const prepared = await api<{ status: string }>('/api/wallet/rgb/utxos', { count: Number(utxoCount), sizeSat: utxoSizeSat, feeRateSatPerVbyte: utxoFeeRate });
-        setMessage(prepared.status === 'ready' ? 'UTXO RGB già presenti.' : 'UTXO richiesti. Mina almeno un blocco e aggiorna.');
+        setMessage(prepared.status === 'ready' ? 'RGB UTXOs already present.' : 'UTXOs requested. Mine at least one block and refresh.');
         await refresh();
-      })}>Prepara UTXO</button>
-      <h3>Emissione NIA</h3>
+      })}>Prepare UTXOs</button>
+      <h3>NIA Issuance</h3>
       <div className="row">
         <label>Ticker<input value={ticker} onChange={event => setTicker(event.target.value.toUpperCase())} /></label>
-        <label>Nome<input value={assetName} onChange={event => setAssetName(event.target.value)} /></label>
+        <label>Name<input value={assetName} onChange={event => setAssetName(event.target.value)} /></label>
       </div>
       <div className="row">
-        <label>Quantità<input value={issueAmount} onChange={event => setIssueAmount(event.target.value)} inputMode="numeric" /></label>
-        <label>Precisione<input value={precision} onChange={event => setPrecision(event.target.value)} inputMode="numeric" /></label>
+        <label>Amount<input value={issueAmount} onChange={event => setIssueAmount(event.target.value)} inputMode="numeric" /></label>
+        <label>Precision<input value={precision} onChange={event => setPrecision(event.target.value)} inputMode="numeric" /></label>
       </div>
       <button disabled={busy || !ticker || !assetName || !issueAmount} onClick={() => void action(async () => {
         const created = await api<IssuedAsset>('/api/wallet/rgb/issue', { ticker, name: assetName, precision: Number(precision), amounts: [Number(issueAmount)] });
@@ -116,25 +116,25 @@ export function WalletCard({ label, baseUrl }: WalletCardProps) {
         setBalanceAssetId(created.assetId);
         setChannelAssetId(created.assetId);
         await refresh();
-      })}>Emetti NIA</button>
+      })}>Issue NIA</button>
       {issued && <p role="status">{issued.ticker} · {issued.assetId} · supply {issued.issuedSupply}</p>}
-      <h3>Canale</h3>
-      <label>Peer pubkey@host:porta<input value={peer} onChange={event => setPeer(event.target.value)} placeholder="02...@bob:9736" /></label>
-      <button disabled={busy || !peer} onClick={() => void action(async () => { await api('/api/wallet/peers/connect', { peer }); await refresh(); })}>Collega peer</button>
+      <h3>Channel</h3>
+      <label>Peer pubkey@host:port<input value={peer} onChange={event => setPeer(event.target.value)} placeholder="02...@bob:9736" /></label>
+      <button disabled={busy || !peer} onClick={() => void action(async () => { await api('/api/wallet/peers/connect', { peer }); await refresh(); })}>Connect peer</button>
       <div className="row">
-        <label>Capacità sat<input value={capacitySat} onChange={event => setCapacitySat(event.target.value)} inputMode="numeric" /></label>
+        <label>Capacity sat<input value={capacitySat} onChange={event => setCapacitySat(event.target.value)} inputMode="numeric" /></label>
         <label>Asset<input value={channelAssetId} onChange={event => setChannelAssetId(event.target.value)} /></label>
-        <label>Importo asset<input value={channelAssetAmount} onChange={event => setChannelAssetAmount(event.target.value)} inputMode="numeric" /></label>
+        <label>Asset amount<input value={channelAssetAmount} onChange={event => setChannelAssetAmount(event.target.value)} inputMode="numeric" /></label>
       </div>
       <button disabled={busy || !peer || !capacitySat} onClick={() => void action(async () => {
         await api('/api/wallet/channels/open', { peer, capacitySat, public: true, ...(channelAssetId ? { assetId: channelAssetId, assetAmount: channelAssetAmount } : {}) });
-        setMessage('Apertura richiesta. Mina 6 blocchi prima di pagare.');
+        setMessage('Channel opening requested. Mine 6 blocks before paying.');
         await refresh();
-      })}>Apri canale</button>
-      <p>Canali: {channels.length} · Asset noti: {assets.length}</p>
+      })}>Open channel</button>
+      <p>Channels: {channels.length} · Known assets: {assets.length}</p>
       <pre>{JSON.stringify({ channels, assets }, null, 2)}</pre>
-      <label>Contract ID per il saldo<input value={balanceAssetId} onChange={event => { setBalanceAssetId(event.target.value); setAssetBalance(null); }} /></label>
-      <button disabled={busy || !balanceAssetId} onClick={() => void action(async () => setAssetBalance(await api(`/api/wallet/asset-balance?assetId=${encodeURIComponent(balanceAssetId)}`)))}>Leggi saldo</button>
+      <label>Contract ID for balance<input value={balanceAssetId} onChange={event => { setBalanceAssetId(event.target.value); setAssetBalance(null); }} /></label>
+      <button disabled={busy || !balanceAssetId} onClick={() => void action(async () => setAssetBalance(await api(`/api/wallet/asset-balance?assetId=${encodeURIComponent(balanceAssetId)}`)))}>Read balance</button>
       {assetBalance !== null && <pre>{JSON.stringify(assetBalance, null, 2)}</pre>}
     </>}
     {message && <p className="notice" role="status">{message}</p>}

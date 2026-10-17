@@ -183,7 +183,7 @@ export type CenterWorkspaceProps = {
 function formatNumber(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return '0';
   const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString('it-IT') : String(value);
+  return Number.isFinite(n) ? n.toLocaleString('en-US') : String(value);
 }
 
 function describeInvoiceStatus(raw: unknown): {
@@ -194,15 +194,15 @@ function describeInvoiceStatus(raw: unknown): {
   const str = typeof raw === 'string' ? raw : JSON.stringify(raw ?? '');
   const lower = str.toLowerCase();
   if (lower.includes('succeeded') || lower.includes('paid') || lower.includes('settled')) {
-    return { badge: 'PAID', tone: 'pill-success', detail: 'Invoice saldata correttamente.' };
+    return { badge: 'PAID', tone: 'pill-success', detail: 'Invoice settled successfully.' };
   }
   if (lower.includes('expired') || lower.includes('failed') || lower.includes('cancelled')) {
-    return { badge: 'EXPIRED / FAILED', tone: 'pill-danger', detail: 'Invoice scaduta o annullata.' };
+    return { badge: 'EXPIRED / FAILED', tone: 'pill-danger', detail: 'Invoice expired or cancelled.' };
   }
   if (lower.includes('pending') || lower.includes('open') || lower.includes('unpaid')) {
-    return { badge: 'PENDING', tone: 'pill-warning', detail: 'In attesa di pagamento HTLC.' };
+    return { badge: 'PENDING', tone: 'pill-warning', detail: 'Waiting for HTLC payment.' };
   }
-  return { badge: 'VERIFIED', tone: 'pill-neutral', detail: str || 'Stato interrogato' };
+  return { badge: 'VERIFIED', tone: 'pill-neutral', detail: str || 'Status queried' };
 }
 
 export function CenterWorkspace({
@@ -382,7 +382,7 @@ export function CenterWorkspace({
     try {
       const d = await onDecodeInvoice();
       if (d) {
-        setSendNotice('Invoice BOLT11/RGB decodificata e verificata con successo.');
+        setSendNotice('BOLT11/RGB invoice decoded and verified successfully.');
       }
     } catch (err) {
       setSendError((err as Error).message);
@@ -397,7 +397,7 @@ export function CenterWorkspace({
     setSendNotice('');
     try {
       await onPreparePayment();
-      setSendNotice('Pagamento preparato (Step 1/2 completato). Verifica la rotta e conferma.');
+      setSendNotice('Payment prepared (Step 1/2 completed). Review the route and confirm.');
     } catch (err) {
       setSendError((err as Error).message);
     } finally {
@@ -411,7 +411,7 @@ export function CenterWorkspace({
     setSendNotice('');
     try {
       await onConfirmPayment();
-      setSendNotice('Pagamento inviato sul canale RGB-LN.');
+      setSendNotice('Payment sent on the RGB-LN channel.');
     } catch (err) {
       setSendError((err as Error).message);
     } finally {
@@ -427,7 +427,7 @@ export function CenterWorkspace({
 
     if (chosenAsset && isReceiveBelowHtlcMin) {
       setReceiveError(
-        `RGB Lightning richiede un minimo HTLC di ${RGB_HTLC_MIN_MSAT.toLocaleString('it-IT')} msat (3.000 sat).`,
+        `RGB Lightning requires a minimum HTLC of ${RGB_HTLC_MIN_MSAT.toLocaleString('en-US')} msat (3,000 sat).`,
       );
       return;
     }
@@ -444,7 +444,7 @@ export function CenterWorkspace({
       });
       setGeneratedInvoice(inv);
       setGeneratedInvoiceStatus(null);
-      setReceiveNotice(`Invoice generata con successo su ${activeNode.label}.`);
+      setReceiveNotice(`Invoice generated successfully on ${activeNode.label}.`);
     } catch (err) {
       setReceiveError((err as Error).message);
     } finally {
@@ -471,10 +471,10 @@ export function CenterWorkspace({
       setPeerUriInput(counterpartyNode.summary.peerUri);
       setChannelPeerInput(counterpartyNode.summary.peerUri);
       setChannelError('');
-      setChannelNotice(`Auto-compilato Peer URI di ${counterpartyNode.label}.`);
+      setChannelNotice(`Auto-filled Peer URI of ${counterpartyNode.label}.`);
     } else {
       setChannelError(
-        `Peer URI di ${counterpartyNode?.label ?? 'controparte'} non disponibile. Sblocca prima il nodo controparte.`,
+        `Peer URI of ${counterpartyNode?.label ?? 'counterparty'} is not available. Unlock the counterparty node first.`,
       );
     }
   }
@@ -486,7 +486,7 @@ export function CenterWorkspace({
     setChannelNotice('');
     try {
       await onConnectPeer(peerUriInput.trim());
-      setChannelNotice(`Connessione peer stabilita: ${peerUriInput.trim()}`);
+      setChannelNotice(`Peer connection established: ${peerUriInput.trim()}`);
     } catch (err) {
       setChannelError((err as Error).message);
     } finally {
@@ -497,7 +497,7 @@ export function CenterWorkspace({
   async function handleOpenChannelClick() {
     const rawPeer = channelPeerInput.trim() || peerUriInput.trim();
     if (!rawPeer) {
-      setChannelError('Inserire Peer URI o Pubkey del nodo controparte.');
+      setChannelError('Please enter the Peer URI or Pubkey of the counterparty node.');
       return;
     }
     // If the user typed only the 66-hex nodeId, enrich with @host:port if known from counterparty
@@ -525,7 +525,7 @@ export function CenterWorkspace({
           : {}),
       });
       setChannelNotice(
-        'Richiesta apertura canale inviata! Mina +6 blocchi nella barra di sinistra per confermare il canale.',
+        'Channel open request sent! Mine +6 blocks in the left sidebar to confirm the channel.',
       );
     } catch (err) {
       setChannelError((err as Error).message);
@@ -568,7 +568,7 @@ export function CenterWorkspace({
       setSelectedOverviewAssetId(created.assetId);
       setChannelAssetId(created.assetId);
       setReceiveAssetId(created.assetId);
-      setL1Notice(`Asset NIA ${created.ticker} emesso con Contract ID ${created.assetId}.`);
+      setL1Notice(`NIA asset ${created.ticker} issued with Contract ID ${created.assetId}.`);
     } catch (err) {
       setL1Error((err as Error).message);
     } finally {
@@ -594,7 +594,7 @@ export function CenterWorkspace({
     generatedInvoiceStatus !== null ? describeInvoiceStatus(generatedInvoiceStatus) : null;
 
   return (
-    <main className="center-workspace" aria-label="Area Operativa Centrale Wallet e QVAC">
+    <main className="center-workspace" aria-label="Central Wallet and QVAC Workspace">
       {/* A. TOP BAR: WDK & RGB-LN USER WALLET OVERVIEW */}
       <section className="wallet-overview-header">
         <div className="wallet-overview-top">
@@ -604,30 +604,30 @@ export function CenterWorkspace({
           </div>
         </div>
 
-        {/* Riepilogo Saldi Utente */}
+        {/* User Balance Summary */}
         <div className="wallet-balances-grid">
           <div className="balance-kpi-card">
-            <span className="kpi-title">Saldo Bitcoin On-Chain</span>
+            <span className="kpi-title">On-Chain Bitcoin Balance</span>
             <div className="kpi-main">
               <strong>{formatNumber(activeNode.summary?.btcSpendableSat)}</strong>
               <span className="kpi-unit">sats</span>
             </div>
             <span className="kpi-sub">
-              Capacità Totale Canali LN:{' '}
+              Total LN Channel Capacity:{' '}
               <strong>{formatNumber(liquidityTotals.totalCapacitySat)} sats</strong>
             </span>
           </div>
 
           <div className="balance-kpi-card kpi-rgb">
             <div className="kpi-header-inline">
-              <span className="kpi-title">Saldo Asset RGB</span>
+              <span className="kpi-title">RGB Asset Balance</span>
               <button
                 type="button"
                 className="btn-secondary btn-xs"
                 disabled={overviewBalanceBusy || !effectiveOverviewAssetId}
                 onClick={() => void handleOverviewBalanceCheck()}
               >
-                {overviewBalanceBusy ? '...' : '↻ Verifica'}
+                {overviewBalanceBusy ? '...' : '↻ Verify'}
               </button>
             </div>
 
@@ -648,7 +648,7 @@ export function CenterWorkspace({
             <div className="contract-selector-row">
               {activeNode.assets.length > 0 ? (
                 <select
-                  aria-label="Seleziona Contract ID RGB"
+                  aria-label="Select RGB Contract ID"
                   value={effectiveOverviewAssetId}
                   onChange={e => setSelectedOverviewAssetId(e.target.value)}
                 >
@@ -662,7 +662,7 @@ export function CenterWorkspace({
                 <input
                   value={selectedOverviewAssetId}
                   onChange={e => setSelectedOverviewAssetId(e.target.value)}
-                  placeholder="Incolla contract_id (rgb:...) per verifica"
+                  placeholder="Paste contract_id (rgb:...) to verify"
                 />
               )}
             </div>
@@ -673,9 +673,9 @@ export function CenterWorkspace({
             )}
           </div>
 
-          {/* Barra Grafica Liquidità Lightning (Outbound vs Inbound BTC + RGB) */}
+          {/* Graphical Lightning Liquidity Bar (Outbound vs Inbound BTC + RGB) */}
           <div className="balance-kpi-card kpi-liquidity">
-            <span className="kpi-title">Liquidità Canali Lightning (Outbound vs Inbound)</span>
+            <span className="kpi-title">Lightning Channel Liquidity (Outbound vs Inbound)</span>
 
             <div className="dual-liquidity-group">
               <div className="liquidity-row">
@@ -716,8 +716,8 @@ export function CenterWorkspace({
         </div>
       </section>
 
-      {/* B. SELETTORE MODALITÀ OPERATIVA (TAB BAR CENTRALE) */}
-      <nav className="workspace-mode-tabs" aria-label="Modalità Operativa">
+      {/* B. WORKSPACE MODE SELECTOR (CENTRAL TAB BAR) */}
+      <nav className="workspace-mode-tabs" aria-label="Operating Mode">
         <button
           type="button"
           className={`mode-tab-btn tab-qvac ${workspaceTab === 'chat' ? 'active' : ''}`}
@@ -735,54 +735,54 @@ export function CenterWorkspace({
             }, 30);
           }}
         >
-          ✍️ Inserimento Manuale TX & Operazioni
+          ✍️ Manual TX &amp; Operations
         </button>
         <button
           type="button"
           className={`mode-tab-btn tab-split ${workspaceTab === 'split' ? 'active' : ''}`}
           onClick={() => onChangeWorkspaceTab('split')}
-          title="Mostra Chat QVAC e Inserimento Manuale affiancati"
+          title="Show QVAC Chat and Manual Entry side by side"
         >
-          ⚡ Vista Split (Chat + Manuale)
+          ⚡ Split View (Chat + Manual)
         </button>
       </nav>
 
       {qvacError && (
         <div className="error" role="alert">
-          <strong>Errore QVAC / Validazione:</strong> {qvacError}
+          <strong>QVAC / Validation Error:</strong> {qvacError}
         </div>
       )}
 
       <div className={`workspace-panes ${workspaceTab === 'split' ? 'panes-split' : ''}`}>
-        {/* C. DETTAGLIO TAB 1: QVAC AI COPILOT (CHAT) */}
+        {/* C. TAB 1 DETAIL: QVAC AI COPILOT (CHAT) */}
         {(workspaceTab === 'chat' || workspaceTab === 'split') && (
           <section className="workspace-panel chat-panel">
             <div className="panel-header">
               <div>
                 <span className="eyebrow text-qvac">NATURAL LANGUAGE INTENT ENGINE</span>
-                <h2>💬 QVAC AI Copilot · Proposta Azione con Conferma</h2>
+                <h2>💬 QVAC AI Copilot · Action Proposal with Confirmation</h2>
               </div>
               {qvacLatencyMs !== null && (
-                <span className="latency-badge">Inferenza QVAC: {qvacLatencyMs} ms</span>
+                <span className="latency-badge">QVAC Inference: {qvacLatencyMs} ms</span>
               )}
             </div>
 
             <p className="muted-text">
-              Descrivi il pagamento o l’operazione in linguaggio naturale. QVAC estrae i vincoli (
-              <code>/api/constraints/interpret</code>), li compila deterministicamente (
-              <code>/api/constraints/compile</code>) e genera una{' '}
-              <strong>Action Confirmation Card</strong> prima di qualsiasi esecuzione.
+              Describe the payment or operation in natural language. QVAC extracts the constraints (
+              <code>/api/constraints/interpret</code>), compiles them deterministically (
+              <code>/api/constraints/compile</code>), and generates an{' '}
+              <strong>Action Confirmation Card</strong> before any execution.
             </p>
 
-            {/* Contesto Invoice Rapido per la Chat */}
+            {/* Quick Invoice Context for Chat */}
             <div className="chat-invoice-context">
               <label className="compact-label">
-                Invoice di riferimento per la compilazione in Chat (opzionale per operazioni setup)
+                Reference Invoice for Chat Compilation (optional for setup operations)
                 <div className="input-with-action">
                   <input
                     value={paymentDraft.invoice}
                     onChange={e => onUpdatePaymentDraft({ invoice: e.target.value })}
-                    placeholder="lnbcrt1... (incolla o carica da Bob)"
+                    placeholder="lnbcrt1... (paste or load from Bob)"
                   />
                   {counterpartyNode?.lastInvoice && (
                     <button
@@ -792,22 +792,22 @@ export function CenterWorkspace({
                         onUpdatePaymentDraft({ invoice: counterpartyNode.lastInvoice })
                       }
                     >
-                      Incolla Invoice di {counterpartyNode.label}
+                      Paste {counterpartyNode.label}&apos;s Invoice
                     </button>
                   )}
                 </div>
               </label>
             </div>
 
-            {/* Input Prompt Linguaggio Naturale */}
+            {/* Natural Language Prompt Input */}
             <div className="chat-composer">
               <label className="compact-label">
-                Prompt Operativo QVAC (operando come <strong>{activeNode.label}</strong>)
+                QVAC Operational Prompt (operating as <strong>{activeNode.label}</strong>)
                 <textarea
                   rows={3}
                   value={chatPrompt}
                   onChange={e => onChangeChatPrompt(e.target.value)}
-                  placeholder="Es: Invia 50 tUSDT a Bob usando questa invoice, spendi meno di 100 sat di fee, escludi il nodo X e privilegia l'affidabilità"
+                  placeholder="E.g.: Send 50 tUSDT to Bob using this invoice, spend less than 100 sat in fees, avoid node X and prioritize reliability"
                   maxLength={1000}
                 />
               </label>
@@ -819,19 +819,19 @@ export function CenterWorkspace({
                   onClick={() => void onSubmitChatPrompt()}
                 >
                   {qvacBusy
-                    ? 'Interpretazione e Compilazione QVAC...'
-                    : '✨ Interpreta & Genera Action Card'}
+                    ? 'QVAC Interpretation and Compilation...'
+                    : '✨ Interpret & Generate Action Card'}
                 </button>
               </div>
             </div>
 
-            {/* Stream delle Action Confirmation Cards */}
+            {/* Action Confirmation Cards Stream */}
             <div className="chat-cards-stream">
               {chatCards.length === 0 ? (
                 <div className="empty-chat-box">
                   <p>
-                    Nessuna proposta attiva. Scrivi un comando sopra oppure clicca uno dei{' '}
-                    <strong>Demo Prompt Shortcuts</strong> nella barra di sinistra.
+                    No active proposal. Write a command above or click one of the{' '}
+                    <strong>Demo Prompt Shortcuts</strong> in the left sidebar.
                   </p>
                 </div>
               ) : (
@@ -845,56 +845,56 @@ export function CenterWorkspace({
                       <div className="action-card-top">
                         <div>
                           <span className="qvac-pill">ACTION CONFIRMATION CARD</span>
-                          <span className="node-badge-inline">Nodo: {card.nodeLabel}</span>
+                          <span className="node-badge-inline">Node: {card.nodeLabel}</span>
                           {card.latencyMs !== null && (
                             <span className="mono-badge">{card.latencyMs} ms</span>
                           )}
                         </div>
                         <time className="card-time">
-                          {new Date(card.timestamp).toLocaleTimeString('it-IT')}
+                          {new Date(card.timestamp).toLocaleTimeString('en-US')}
                         </time>
                       </div>
 
                       <blockquote className="user-prompt-quote">“{card.prompt}”</blockquote>
 
-                      {/* Parametri Estratti da QVAC */}
+                      {/* Parameters Extracted by QVAC */}
                       <div className="extracted-kv-grid">
                         <div className="kv-box">
-                          <span className="kv-label">Algoritmo Suggerito</span>
+                          <span className="kv-label">Suggested Algorithm</span>
                           <code className="kv-val text-qvac">{card.suggestedAlgorithm}</code>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Pesi Multi-Objective</span>
+                          <span className="kv-label">Multi-Objective Weights</span>
                           <code className="kv-val">
                             fee:{card.suggestedWeights.fee} · rel:{card.suggestedWeights.reliability}{' '}
                             · cltv:{card.suggestedWeights.cltv} · hops:{card.suggestedWeights.hops}
                           </code>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Max Fee Estratta</span>
+                          <span className="kv-label">Extracted Max Fee</span>
                           <code className="kv-val">
                             {card.extracted.feeLimit
                               ? `${card.extracted.feeLimit.comparison === 'lt' ? '<' : '≤'} ${card.extracted.feeLimit.value} ${card.extracted.feeLimit.unit}`
-                              : 'Nessun tetto'}
+                              : 'No cap'}
                           </code>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Priorità & Privacy</span>
+                          <span className="kv-label">Priority &amp; Privacy</span>
                           <code className="kv-val">
                             {card.extracted.priority ?? 'balanced'} /{' '}
                             {card.extracted.privacyRequest ?? 'standard'}
                           </code>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Nodi Esclusi</span>
+                          <span className="kv-label">Excluded Nodes</span>
                           <code className="kv-val">
                             {card.extracted.excludedNodeReferences.length > 0
                               ? card.extracted.excludedNodeReferences.join(', ')
-                              : 'Nessuno'}
+                              : 'None'}
                           </code>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Importo & Asset</span>
+                          <span className="kv-label">Amount &amp; Asset</span>
                           <code className="kv-val">
                             {card.decodedInvoice?.assetAmount
                               ? `${card.decodedInvoice.assetAmount} RGB (${card.paymentDraft.amount || card.decodedInvoice.amountMsat} msat)`
@@ -917,7 +917,7 @@ export function CenterWorkspace({
                           {card.compileResult.normalized && (
                             <span className="mono-small">
                               MaxFee: {card.compileResult.normalized.maxRoutingFeeMsat ?? '∞'} msat
-                              · Esclusi: {card.compileResult.normalized.excludedNodeIds.length}
+                              · Excluded: {card.compileResult.normalized.excludedNodeIds.length}
                             </span>
                           )}
                         </div>
@@ -931,20 +931,20 @@ export function CenterWorkspace({
 
                       {card.setupDraft && (
                         <div className="setup-draft-box">
-                          <strong>Operazione Setup Rilevata:</strong>{' '}
+                          <strong>Detected Setup Operation:</strong>{' '}
                           {card.setupDraft.kind === 'prepare_utxos' &&
-                            `Prepara ${card.setupDraft.count} UTXO RGB da ${card.setupDraft.sizeSat} sat (${card.setupDraft.feeRateSatPerVbyte} sat/vB)`}
+                            `Prepare ${card.setupDraft.count} RGB UTXOs of ${card.setupDraft.sizeSat} sat (${card.setupDraft.feeRateSatPerVbyte} sat/vB)`}
                           {card.setupDraft.kind === 'issue_nia' &&
-                            `Emetti Asset NIA ${card.setupDraft.ticker} (${card.setupDraft.name}) · Quantità ${card.setupDraft.amount}`}
+                            `Issue NIA Asset ${card.setupDraft.ticker} (${card.setupDraft.name}) · Supply ${card.setupDraft.amount}`}
                           {card.setupDraft.kind === 'open_channel' &&
-                            `Apri Canale verso ${card.setupDraft.peer} · Capacità ${card.setupDraft.capacitySat} sat`}
+                            `Open Channel to ${card.setupDraft.peer} · Capacity ${card.setupDraft.capacitySat} sat`}
                         </div>
                       )}
 
                       {card.preparedIntent && (
                         <div className="intent-ready-banner">
                           <span>
-                            Intento <code>{card.preparedIntent.id.slice(0, 12)}…</code> → Stato:{' '}
+                            Intent <code>{card.preparedIntent.id.slice(0, 12)}…</code> → Status:{' '}
                             <strong>{card.preparedIntent.status.toUpperCase()}</strong>
                           </span>
                         </div>
@@ -963,14 +963,14 @@ export function CenterWorkspace({
                         </div>
                       )}
 
-                      {/* Azioni sulla Card */}
+                      {/* Card Actions */}
                       <div className="action-card-buttons">
                         <button
                           type="button"
                           className="btn-secondary"
                           onClick={() => onTransferCardToManual(card)}
                         >
-                          ✏️ Modifica nel Form Manuale
+                          ✏️ Edit in Manual Form
                         </button>
 
                         {card.actionType === 'payment' ? (
@@ -986,7 +986,7 @@ export function CenterWorkspace({
                               onClick={() => void onPrepareCardPayment(card.id)}
                             >
                               {card.executionStatus === 'preparing'
-                                ? 'Preparazione...'
+                                ? 'Preparing...'
                                 : '1. Prepare Payment'}
                             </button>
                             <button
@@ -998,12 +998,12 @@ export function CenterWorkspace({
                               onClick={() => void onConfirmCardPayment(card.id)}
                               title={
                                 !isSendEnabled
-                                  ? 'Abilita ENABLE_REGTEST_SEND=1 per confermare invii reali'
-                                  : 'Conferma e invia il pagamento preparato'
+                                  ? 'Enable ENABLE_REGTEST_SEND=1 to confirm real sends'
+                                  : 'Confirm and send the prepared payment'
                               }
                             >
                               {card.executionStatus === 'confirming'
-                                ? 'Invio HTLC...'
+                                ? 'Sending HTLC...'
                                 : '2. Confirm & Send'}
                             </button>
                           </>
@@ -1018,10 +1018,10 @@ export function CenterWorkspace({
                             onClick={() => void onExecuteCardSetup(card.id)}
                           >
                             {card.executionStatus === 'preparing'
-                              ? 'Esecuzione...'
+                              ? 'Executing...'
                               : card.executionStatus === 'completed'
-                                ? '✓ Eseguito'
-                                : 'Conferma ed Esegui'}
+                                ? '✓ Executed'
+                                : 'Confirm and Execute'}
                           </button>
                         )}
                       </div>
@@ -1033,17 +1033,17 @@ export function CenterWorkspace({
           </section>
         )}
 
-        {/* D. DETTAGLIO TAB 2: INSERIMENTO MANUALE TX & OPERAZIONI */}
+        {/* D. TAB 2 DETAIL: MANUAL TX & OPERATIONS */}
         {(workspaceTab === 'manual' || workspaceTab === 'split') && (
           <section className="workspace-panel manual-panel">
             <div className="panel-header">
               <div>
                 <span className="eyebrow text-emerald">PRECISION MANUAL CONTROLS</span>
-                <h2>✍️ Inserimento Manuale TX & Operazioni ({activeNode.label})</h2>
+                <h2>✍️ Manual TX &amp; Operations ({activeNode.label})</h2>
               </div>
             </div>
 
-            {/* Navigazione a 4 Sotto-Schede Operative */}
+            {/* 4 Operational Sub-Tabs Navigation */}
             <div className="manual-subtabs" role="tablist">
               <button
                 type="button"
@@ -1052,7 +1052,7 @@ export function CenterWorkspace({
                 className={`subtab-btn ${manualSubTab === 'send' ? 'active' : ''}`}
                 onClick={() => onChangeManualSubTab('send')}
               >
-                ⚡ Invia Pagamento RGB-LN
+                ⚡ Send RGB-LN Payment
               </button>
               <button
                 type="button"
@@ -1061,7 +1061,7 @@ export function CenterWorkspace({
                 className={`subtab-btn ${manualSubTab === 'receive' ? 'active' : ''}`}
                 onClick={() => onChangeManualSubTab('receive')}
               >
-                📥 Ricevi / Crea Invoice
+                📥 Receive / Create Invoice
               </button>
               <button
                 type="button"
@@ -1070,7 +1070,7 @@ export function CenterWorkspace({
                 className={`subtab-btn ${manualSubTab === 'channels' ? 'active' : ''}`}
                 onClick={() => onChangeManualSubTab('channels')}
               >
-                🔗 Apri Canale & Peer
+                🔗 Open Channel &amp; Peer
               </button>
               <button
                 type="button"
@@ -1079,17 +1079,17 @@ export function CenterWorkspace({
                 className={`subtab-btn ${manualSubTab === 'l1' ? 'active' : ''}`}
                 onClick={() => onChangeManualSubTab('l1')}
               >
-                🪙 Operazioni L1 & Asset RGB
+                🪙 L1 Operations &amp; RGB Assets
               </button>
             </div>
 
-            {/* SUB-TAB 1: INVIA PAGAMENTO RGB-LN (MANUAL TX) */}
+            {/* SUB-TAB 1: SEND RGB-LN PAYMENT (MANUAL TX) */}
             {manualSubTab === 'send' && (
               <div className="subtab-content">
                 {/* 1. Input Invoice & Decode */}
                 <div className="form-card">
                   <div className="card-header-row">
-                    <h3>1. Input Invoice BOLT11 / RGB & Decode</h3>
+                    <h3>1. Input BOLT11 / RGB Invoice &amp; Decode</h3>
                     <div className="inline-actions">
                       {counterpartyNode?.lastInvoice && (
                         <button
@@ -1099,7 +1099,7 @@ export function CenterWorkspace({
                             onUpdatePaymentDraft({ invoice: counterpartyNode.lastInvoice })
                           }
                         >
-                          📋 Incolla ultima Invoice di {counterpartyNode.label}
+                          📋 Paste {counterpartyNode.label}&apos;s Latest Invoice
                         </button>
                       )}
                       <button
@@ -1108,7 +1108,7 @@ export function CenterWorkspace({
                         disabled={sendBusy || !paymentDraft.invoice.trim()}
                         onClick={() => void handleDecodeClick()}
                       >
-                        {sendBusy ? 'Decodifica...' : '🔍 Decode Invoice'}
+                        {sendBusy ? 'Decoding...' : '🔍 Decode Invoice'}
                       </button>
                     </div>
                   </div>
@@ -1125,7 +1125,7 @@ export function CenterWorkspace({
 
                   <div className="row-2col">
                     <label className="compact-label">
-                      Importo Lightning (msat)
+                      Lightning Amount (msat)
                       <input
                         inputMode="numeric"
                         value={paymentDraft.amount}
@@ -1134,29 +1134,29 @@ export function CenterWorkspace({
                       />
                     </label>
                     <label className="compact-label">
-                      Contract ID RGB / Asset ID
+                      RGB Contract ID / Asset ID
                       <input
                         value={paymentDraft.assetId}
                         onChange={e => onUpdatePaymentDraft({ assetId: e.target.value })}
-                        placeholder="BTC oppure rgb:..."
+                        placeholder="BTC or rgb:..."
                       />
                     </label>
                   </div>
 
-                  {/* Scheda Strutturata Decodifica Invoice (Zero <pre> grezzi) */}
+                  {/* Structured Decoded Invoice Card */}
                   {decodedInvoice && (
                     <div className="decoded-invoice-card">
                       <div className="decoded-header">
-                        <span className="status-pill pill-success">INVOICE DECODIFICATA</span>
+                        <span className="status-pill pill-success">DECODED INVOICE</span>
                         <span className="mono-small">
-                          Scadenza: {new Date(decodedInvoice.expiresAt).toLocaleString('it-IT')}
+                          Expires: {new Date(decodedInvoice.expiresAt).toLocaleString('en-US')}
                         </span>
                       </div>
                       <div className="decoded-grid">
                         <div className="kv-box">
-                          <span className="kv-label">Importo Asset RGB</span>
+                          <span className="kv-label">RGB Asset Amount</span>
                           <strong className="kv-val text-emerald">
-                            {decodedInvoice.assetAmount ?? 'N/A (Solo BTC)'}
+                            {decodedInvoice.assetAmount ?? 'N/A (BTC only)'}
                           </strong>
                         </div>
                         <div className="kv-box">
@@ -1164,17 +1164,17 @@ export function CenterWorkspace({
                           <code className="kv-val">{decodedInvoice.assetId ?? 'BTC'}</code>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Importo HTLC (msat)</span>
+                          <span className="kv-label">HTLC Amount (msat)</span>
                           <strong className="kv-val">
                             {formatNumber(decodedInvoice.amountMsat ?? paymentDraft.amount)} msat
                           </strong>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Destinatario (Payee Pubkey)</span>
+                          <span className="kv-label">Recipient (Payee Pubkey)</span>
                           <code className="kv-val" title={decodedInvoice.payeePubkey ?? ''}>
                             {decodedInvoice.payeePubkey
                               ? `${decodedInvoice.payeePubkey.slice(0, 14)}…${decodedInvoice.payeePubkey.slice(-10)}`
-                              : 'n/d'}
+                              : 'n/a'}
                           </code>
                         </div>
                       </div>
@@ -1183,10 +1183,10 @@ export function CenterWorkspace({
                   )}
                 </div>
 
-                {/* 2. Configurazione Algoritmo di Routing */}
+                {/* 2. Routing Algorithm Configuration */}
                 <div className="form-card">
                   <div className="card-header-row">
-                    <h3>2. Configurazione Algoritmo di Routing (Feature 2 + 3)</h3>
+                    <h3>2. Routing Algorithm Configuration (Feature 2 + 3)</h3>
                     <div className="inline-actions">
                       <button
                         type="button"
@@ -1198,7 +1198,7 @@ export function CenterWorkspace({
                             : onScoreChannelsWithQvac())
                         }
                       >
-                        🧭 Scegli Algoritmo + Score Canali (QVAC)
+                        🧭 Select Algorithm + Score Channels (QVAC)
                       </button>
                       <button
                         type="button"
@@ -1206,7 +1206,7 @@ export function CenterWorkspace({
                         disabled={qvacBusy}
                         onClick={() => void onSeedTelemetry()}
                       >
-                        Seed Telemetria Demo
+                        Seed Demo Telemetry
                       </button>
                     </div>
                   </div>
@@ -1215,7 +1215,7 @@ export function CenterWorkspace({
                   {onLoadFixtureHistory && (
                     <div className="row-3col" style={{ marginBottom: '0.75rem', alignItems: 'end' }}>
                       <label className="compact-label">
-                        Nodo First-Party (Topologia)
+                        First-Party Node (Topology)
                         <select
                           value={fixtureNodeId}
                           onChange={e => onChangeFixtureNodeId?.(e.target.value)}
@@ -1229,7 +1229,7 @@ export function CenterWorkspace({
                         </select>
                       </label>
                       <label className="compact-label">
-                        Dataset Storico (Tx)
+                        Historical Dataset (Tx)
                         <select
                           value={fixtureLevel}
                           onChange={e => onChangeFixtureLevel?.(Number(e.target.value) as SyntheticHistoryLevel)}
@@ -1248,22 +1248,22 @@ export function CenterWorkspace({
                         disabled={qvacBusy}
                         onClick={() => void onLoadFixtureHistory()}
                       >
-                        📥 Carica Storico Nodo
+                        📥 Load Node History
                       </button>
                     </div>
                   )}
 
                   {fixtureInfo && (
                     <p className="muted-text" style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '0.8rem' }}>
-                      Storico first-party attivo: <strong>{fixtureInfo.nodeId.toUpperCase()}</strong> ·{' '}
-                      <code>{fixtureInfo.datasetId}</code> ({fixtureInfo.loadedSqliteCount} episodi SQLite,{' '}
-                      {fixtureInfo.ingestedRagCount} su QVAC RAG · privacy:{' '}
+                      Active first-party history: <strong>{fixtureInfo.nodeId.toUpperCase()}</strong> ·{' '}
+                      <code>{fixtureInfo.datasetId}</code> ({fixtureInfo.loadedSqliteCount} SQLite episodes,{' '}
+                      {fixtureInfo.ingestedRagCount} on QVAC RAG · privacy:{' '}
                       <code>{fixtureInfo.privacyCheck}</code>)
                     </p>
                   )}
 
                   <label className="compact-label">
-                    Seleziona Algoritmo RLN
+                    Select RLN Algorithm
                     <select
                       value={algorithm}
                       onChange={e => onChangeAlgorithm(e.target.value as RoutingAlgorithm)}
@@ -1281,7 +1281,7 @@ export function CenterWorkspace({
                       {(['fee', 'reliability', 'cltv', 'hops'] as const).map(key => (
                         <div key={key} className="weight-control-box">
                           <div className="weight-top">
-                            <label htmlFor={`weight-${key}`}>Peso {key.toUpperCase()}</label>
+                            <label htmlFor={`weight-${key}`}>Weight {key.toUpperCase()}</label>
                             <input
                               id={`weight-${key}`}
                               type="number"
@@ -1318,7 +1318,7 @@ export function CenterWorkspace({
                     <div className="channel-score-card" style={{ marginBottom: '0.6rem' }}>
                       <div className="card-header-row">
                         <span className="qvac-pill">
-                          FEATURE 3 ALGORITMO: {algorithmSelection.selectedAlgorithm.toUpperCase()} ·{' '}
+                          FEATURE 3 ALGORITHM: {algorithmSelection.selectedAlgorithm.toUpperCase()} ·{' '}
                           {algorithmSelection.reasonCode.toUpperCase()}
                         </span>
                         <span className="mono-small">
@@ -1331,8 +1331,8 @@ export function CenterWorkspace({
                       </div>
                       <p className="muted-text">{algorithmSelection.rationale}</p>
                       <span className="mono-small">
-                        Canali usabili: {algorithmSelection.feasibility.usableChannelCount} · Singolo path sano:{' '}
-                        {algorithmSelection.feasibility.singlePathHealthyChannelCount} · Probing effimero RAM:{' '}
+                        Usable channels: {algorithmSelection.feasibility.usableChannelCount} · Healthy single-path:{' '}
+                        {algorithmSelection.feasibility.singlePathHealthyChannelCount} · Ephemeral RAM probing:{' '}
                         {algorithmSelection.feasibility.ephemeralRamWiped ? 'WIPED ✓' : 'n/a'}
                       </span>
                     </div>
@@ -1342,7 +1342,7 @@ export function CenterWorkspace({
                     <div className="channel-score-card">
                       <div className="card-header-row">
                         <span className="qvac-pill">
-                          PROFILO: {channelScore.overallProfile.toUpperCase()} (
+                          PROFILE: {channelScore.overallProfile.toUpperCase()} (
                           {channelScore.latencyMs} ms)
                         </span>
                         <span className="mono-small">{channelScore.ragBackend}</span>
@@ -1363,16 +1363,16 @@ export function CenterWorkspace({
                   )}
                 </div>
 
-                {/* 3. Form Manuale Vincoli (QVAC Constraints Compiler) */}
+                {/* 3. Manual Constraints Form (QVAC Constraints Compiler) */}
                 <div className="form-card">
                   <div className="card-header-row">
-                    <h3>3. Form Manuale Vincoli (QVAC Constraints Compiler)</h3>
+                    <h3>3. Manual Constraints Form (QVAC Constraints Compiler)</h3>
                     <button
                       type="button"
                       className="btn-secondary btn-xs"
                       onClick={onResetExtracted}
                     >
-                      Reset Vincoli
+                      Reset Constraints
                     </button>
                   </div>
 
@@ -1393,11 +1393,11 @@ export function CenterWorkspace({
                               : null,
                           })
                         }
-                        placeholder="Nessun limite"
+                        placeholder="No limit"
                       />
                     </label>
                     <label className="compact-label">
-                      Unità Fee
+                      Fee Unit
                       <select
                         value={extracted.feeLimit?.unit ?? 'sat'}
                         onChange={e =>
@@ -1415,7 +1415,7 @@ export function CenterWorkspace({
                       </select>
                     </label>
                     <label className="compact-label">
-                      Operatore
+                      Operator
                       <select
                         value={extracted.feeLimit?.comparison ?? 'lte'}
                         onChange={e =>
@@ -1428,14 +1428,14 @@ export function CenterWorkspace({
                           })
                         }
                       >
-                        <option value="lte">≤ Massimo (lte)</option>
-                        <option value="lt">&lt; Meno di (lt)</option>
+                        <option value="lte">≤ At most (lte)</option>
+                        <option value="lt">&lt; Less than (lt)</option>
                       </select>
                     </label>
                   </div>
 
                   <label className="compact-label">
-                    Nodi Esclusi (lista pubkey o alias separati da virgola)
+                    Excluded Nodes (comma-separated pubkey or alias list)
                     <input
                       value={extracted.excludedNodeReferences.join(', ')}
                       onChange={e =>
@@ -1446,13 +1446,13 @@ export function CenterWorkspace({
                             .filter(Boolean),
                         })
                       }
-                      placeholder="Es: 02abc..., Bob"
+                      placeholder="E.g.: 02abc..., Bob"
                     />
                   </label>
 
                   <div className="row-2col">
                     <label className="compact-label">
-                      Priorità di Instradamento
+                      Routing Priority
                       <select
                         value={extracted.priority ?? ''}
                         onChange={e =>
@@ -1461,15 +1461,15 @@ export function CenterWorkspace({
                           })
                         }
                       >
-                        <option value="">Nessuna espressa (default balanced)</option>
-                        <option value="lowest_fee">lowest_fee (Minimo costo)</option>
-                        <option value="reliability">reliability (Massima affidabilità)</option>
-                        <option value="balanced">balanced (Bilanciata)</option>
+                        <option value="">None specified (default balanced)</option>
+                        <option value="lowest_fee">lowest_fee (Lowest cost)</option>
+                        <option value="reliability">reliability (Maximum reliability)</option>
+                        <option value="balanced">balanced (Balanced)</option>
                       </select>
                     </label>
 
                     <label className="compact-label">
-                      Livello Privacy
+                      Privacy Level
                       <select
                         value={extracted.privacyRequest ?? ''}
                         onChange={e =>
@@ -1479,11 +1479,11 @@ export function CenterWorkspace({
                           })
                         }
                       >
-                        <option value="">Standard (MPP consentito)</option>
+                        <option value="">Standard (MPP allowed)</option>
                         <option value="avoid_extra_probing">
-                          avoid_extra_probing (Singolo path / No probing)
+                          avoid_extra_probing (Single path / No probing)
                         </option>
-                        <option value="unspecified">unspecified (Da precisare)</option>
+                        <option value="unspecified">unspecified (Needs clarification)</option>
                       </select>
                     </label>
                   </div>
@@ -1495,8 +1495,8 @@ export function CenterWorkspace({
                     onClick={() => void onCompileConstraintsManual()}
                   >
                     {qvacBusy
-                      ? 'Compilazione deterministica...'
-                      : '⚙️ Compila Vincoli (/api/constraints/compile)'}
+                      ? 'Deterministic compilation...'
+                      : '⚙️ Compile Constraints (/api/constraints/compile)'}
                   </button>
 
                   {compileResult && (
@@ -1520,23 +1520,23 @@ export function CenterWorkspace({
                       {compileResult.normalized && (
                         <div className="decoded-grid">
                           <div className="kv-box">
-                            <span className="kv-label">Max Fee Normalizzata</span>
+                            <span className="kv-label">Normalized Max Fee</span>
                             <code className="kv-val">
-                              {compileResult.normalized.maxRoutingFeeMsat ?? 'Nessun limite'} msat
+                              {compileResult.normalized.maxRoutingFeeMsat ?? 'No limit'} msat
                             </code>
                           </div>
                           <div className="kv-box">
-                            <span className="kv-label">Nodi Esclusi Risolti</span>
+                            <span className="kv-label">Resolved Excluded Nodes</span>
                             <code className="kv-val">
-                              {compileResult.normalized.excludedNodeIds.join(', ') || 'Nessuno'}
+                              {compileResult.normalized.excludedNodeIds.join(', ') || 'None'}
                             </code>
                           </div>
                           <div className="kv-box">
-                            <span className="kv-label">Priorità</span>
+                            <span className="kv-label">Priority</span>
                             <code className="kv-val">{compileResult.normalized.priority}</code>
                           </div>
                           <div className="kv-box">
-                            <span className="kv-label">Preferenza Privacy</span>
+                            <span className="kv-label">Privacy Preference</span>
                             <code className="kv-val">
                               {compileResult.normalized.privacyPreference}
                             </code>
@@ -1552,14 +1552,13 @@ export function CenterWorkspace({
                   )}
 
                   <p className="constraint-disclaimer">
-                    Nota: L&apos;enforcement reale dei vincoli non è ancora attivo a livello
-                    protocollo.
+                    Note: Protocol-level enforcement of constraints is not yet active.
                   </p>
                 </div>
 
-                {/* 4. Flusso di Esecuzione Sicuro a 2 Step */}
+                {/* 4. Safe 2-Step Payment Execution Flow */}
                 <div className="form-card execution-card">
-                  <h3>4. Esecuzione Pagamento Sicura a 2 Step</h3>
+                  <h3>4. Safe 2-Step Payment Execution</h3>
 
                   <div className="two-step-buttons">
                     <button
@@ -1568,7 +1567,7 @@ export function CenterWorkspace({
                       disabled={sendBusy || !paymentDraft.invoice.trim()}
                       onClick={() => void handlePrepareClick()}
                     >
-                      {sendBusy ? 'Elaborazione...' : '1. Prepare Payment'}
+                      {sendBusy ? 'Processing...' : '1. Prepare Payment'}
                     </button>
 
                     <button
@@ -1581,7 +1580,7 @@ export function CenterWorkspace({
                       }
                       onClick={() => void handleConfirmClick()}
                     >
-                      {sendBusy ? 'Conferma in corso...' : '2. Confirm Payment'}
+                      {sendBusy ? 'Confirming...' : '2. Confirm Payment'}
                     </button>
 
                     {preparedIntent && (
@@ -1591,14 +1590,14 @@ export function CenterWorkspace({
                         disabled={sendBusy}
                         onClick={() => void onRefreshPaymentIntent()}
                       >
-                        ↻ Stato Intento
+                        ↻ Intent Status
                       </button>
                     )}
                   </div>
 
                   {!activeNode.state?.sendEnabled && (
                     <p className="field-hint text-amber">
-                      ⚠️ Invio bloccato finché <code>sendEnabled</code> non è attivo sul nodo (
+                      ⚠️ Sending blocked until <code>sendEnabled</code> is active on the node (
                       <code>ENABLE_REGTEST_SEND=1</code>).
                     </p>
                   )}
@@ -1606,7 +1605,7 @@ export function CenterWorkspace({
                   {preparedIntent && (
                     <div className="prepared-intent-box">
                       <div className="card-header-row">
-                        <strong>Intento #{preparedIntent.id.slice(0, 12)}…</strong>
+                        <strong>Intent #{preparedIntent.id.slice(0, 12)}…</strong>
                         <span
                           className={`status-pill ${
                             preparedIntent.status === 'succeeded'
@@ -1621,11 +1620,11 @@ export function CenterWorkspace({
                       </div>
                       <div className="decoded-grid">
                         <div className="kv-box">
-                          <span className="kv-label">Algoritmo Applicato</span>
+                          <span className="kv-label">Applied Algorithm</span>
                           <code className="kv-val">{preparedIntent.routing.algorithm}</code>
                         </div>
                         <div className="kv-box">
-                          <span className="kv-label">Importo</span>
+                          <span className="kv-label">Amount</span>
                           <code className="kv-val">{preparedIntent.amountMsat} msat</code>
                         </div>
                         <div className="kv-box">
@@ -1656,11 +1655,11 @@ export function CenterWorkspace({
                   )}
                 </div>
 
-                {/* 5. Storico Pagamenti & Stati Invoice */}
+                {/* 5. Payment History & Invoice States */}
                 <div className="form-card">
-                  <h3>5. Storico Pagamenti Lightning ({activeNode.history.length})</h3>
+                  <h3>5. Lightning Payment History ({activeNode.history.length})</h3>
                   {activeNode.history.length === 0 ? (
-                    <p className="empty-inline">Nessun pagamento registrato su {activeNode.label}.</p>
+                    <p className="empty-inline">No payments recorded on {activeNode.label}.</p>
                   ) : (
                     <div className="history-table">
                       {activeNode.history.map((item, idx) => (
@@ -1677,7 +1676,7 @@ export function CenterWorkspace({
                             {item.status.toUpperCase()}
                           </span>
                           <code className="mono-small">
-                            {item.paymentHash ? `${item.paymentHash.slice(0, 14)}…` : 'hash n/d'}
+                            {item.paymentHash ? `${item.paymentHash.slice(0, 14)}…` : 'hash n/a'}
                           </code>
                           <strong>{formatNumber(item.amountMsat)} msat</strong>
                           <span className="text-emerald">
@@ -1693,19 +1692,19 @@ export function CenterWorkspace({
               </div>
             )}
 
-            {/* SUB-TAB 2: RICEVI / CREA INVOICE RGB-LN */}
+            {/* SUB-TAB 2: RECEIVE / CREATE RGB-LN INVOICE */}
             {manualSubTab === 'receive' && (
               <div className="subtab-content">
                 <div className="form-card">
                   <div className="card-header-row">
-                    <h3>Genera Invoice BOLT11 / RGB-LN su {activeNode.label}</h3>
+                    <h3>Generate BOLT11 / RGB-LN Invoice on {activeNode.label}</h3>
                     <div className="subtab-pills">
                       <button
                         type="button"
                         className={receiveContractMode === 'select' ? 'active' : ''}
                         onClick={() => setReceiveContractMode('select')}
                       >
-                        Da Asset del Nodo
+                        From Node Assets
                       </button>
                       <button
                         type="button"
@@ -1719,12 +1718,12 @@ export function CenterWorkspace({
 
                   {receiveContractMode === 'select' ? (
                     <label className="compact-label">
-                      Seleziona Contract ID RGB
+                      Select RGB Contract ID
                       <select
                         value={receiveAssetId || activeNode.assets[0]?.assetId || ''}
                         onChange={e => setReceiveAssetId(e.target.value)}
                       >
-                        <option value="">Solo BTC (nessun asset RGB)</option>
+                        <option value="">BTC Only (no RGB asset)</option>
                         {activeNode.assets.map(a => (
                           <option key={a.assetId ?? ''} value={a.assetId ?? ''}>
                             {a.ticker ?? 'RGB'} — {a.assetId}
@@ -1734,7 +1733,7 @@ export function CenterWorkspace({
                     </label>
                   ) : (
                     <label className="compact-label">
-                      Contract ID RGB Manuale (lascia vuoto per solo BTC)
+                      Manual RGB Contract ID (leave empty for BTC only)
                       <input
                         value={receiveAssetId}
                         onChange={e => setReceiveAssetId(e.target.value)}
@@ -1745,7 +1744,7 @@ export function CenterWorkspace({
 
                   <div className="row-3col">
                     <label className="compact-label">
-                      Quantità Asset RGB
+                      RGB Asset Amount
                       <input
                         inputMode="numeric"
                         value={receiveAssetAmount}
@@ -1755,7 +1754,7 @@ export function CenterWorkspace({
                     </label>
 
                     <label className="compact-label">
-                      Importo Millisatoshi (msat)
+                      Millisatoshi Amount (msat)
                       <input
                         inputMode="numeric"
                         value={receiveMsat}
@@ -1764,7 +1763,7 @@ export function CenterWorkspace({
                     </label>
 
                     <label className="compact-label">
-                      Scadenza (secondi)
+                      Expiry (seconds)
                       <input
                         inputMode="numeric"
                         value={receiveExpirySec}
@@ -1775,8 +1774,8 @@ export function CenterWorkspace({
 
                   {isReceiveBelowHtlcMin && (
                     <div className="notice compact-notice" role="alert">
-                      ⚠️ Attenzione: L&apos;importo msat è inferiore al minimo HTLC RGB di{' '}
-                      <strong>3.000.000 msat</strong> (3.000 sat).
+                      ⚠️ Warning: The msat amount is below the RGB HTLC minimum of{' '}
+                      <strong>3,000,000 msat</strong> (3,000 sat).
                     </div>
                   )}
 
@@ -1786,7 +1785,7 @@ export function CenterWorkspace({
                     disabled={receiveBusy || !receiveMsat.trim()}
                     onClick={() => void handleGenerateInvoice()}
                   >
-                    {receiveBusy ? 'Generazione Invoice...' : '⚡ Genera Invoice'}
+                    {receiveBusy ? 'Generating Invoice...' : '⚡ Generate Invoice'}
                   </button>
 
                   {receiveNotice && (
@@ -1803,7 +1802,7 @@ export function CenterWorkspace({
                   {generatedInvoice && (
                     <div className="generated-invoice-box">
                       <CopyableChip
-                        label={`Invoice Generata (${activeNode.label})`}
+                        label={`Generated Invoice (${activeNode.label})`}
                         value={generatedInvoice}
                         truncate={false}
                       />
@@ -1815,14 +1814,14 @@ export function CenterWorkspace({
                           disabled={receiveBusy}
                           onClick={() => void handleCheckInvoiceStatus()}
                         >
-                          🔍 Verifica Stato Invoice
+                          🔍 Check Invoice Status
                         </button>
                         <button
                           type="button"
                           className="btn-qvac"
                           onClick={() => onUseInvoiceOnOtherNode(generatedInvoice)}
                         >
-                          ↗ Usa subito come Invoice da pagare sull&apos;altro nodo
+                          ↗ Use Immediately as Payment Invoice on Counterparty Node
                         </button>
                       </div>
 
@@ -1840,7 +1839,7 @@ export function CenterWorkspace({
               </div>
             )}
 
-            {/* SUB-TAB 3: APRI CANALE & CONNETTI PEER */}
+            {/* SUB-TAB 3: OPEN CHANNEL & CONNECT PEER */}
             {manualSubTab === 'channels' && (
               <div className="subtab-content">
                 <div className="form-card">
@@ -1851,7 +1850,7 @@ export function CenterWorkspace({
                       className="btn-secondary btn-xs"
                       onClick={handleAutoFillPeerUri}
                     >
-                      ⚡ Auto-compila Peer URI di {counterpartyNode?.label ?? 'Bob/Alice'}
+                      ⚡ Auto-fill {counterpartyNode?.label ?? 'Bob/Alice'}&apos;s Peer URI
                     </button>
                   </div>
 
@@ -1870,26 +1869,26 @@ export function CenterWorkspace({
                     disabled={channelBusy || !peerUriInput.trim()}
                     onClick={() => void handleConnectPeerClick()}
                   >
-                    {channelBusy ? 'Connessione in corso...' : '🔗 Connetti Peer'}
+                    {channelBusy ? 'Connecting...' : '🔗 Connect Peer'}
                   </button>
                 </div>
 
                 <div className="form-card">
-                  <h3>2. Open Channel (BTC + Asset RGB Opzionale)</h3>
+                  <h3>2. Open Channel (BTC + Optional RGB Asset)</h3>
 
                   <div className="row-2col">
                     <label className="compact-label">
-                      Peer Pubkey / Node ID o Peer URI
+                      Peer Pubkey / Node ID or Peer URI
                       <input
                         value={channelPeerInput}
                         onChange={e => setChannelPeerInput(e.target.value)}
                         placeholder={
-                          counterpartyNode?.summary?.peerUri ?? '02... oppure pubkey@host:port'
+                          counterpartyNode?.summary?.peerUri ?? '02... or pubkey@host:port'
                         }
                       />
                     </label>
                     <label className="compact-label">
-                      Capacità Canale BTC (sats)
+                      BTC Channel Capacity (sats)
                       <input
                         inputMode="numeric"
                         value={channelCapacitySat}
@@ -1905,13 +1904,13 @@ export function CenterWorkspace({
                       checked={includeRgbInChannel}
                       onChange={e => setIncludeRgbInChannel(e.target.checked)}
                     />
-                    <span>Alloca un Asset RGB nel canale Lightning</span>
+                    <span>Allocate an RGB Asset in the Lightning channel</span>
                   </label>
 
                   {includeRgbInChannel && (
                     <div className="row-2col">
                       <label className="compact-label">
-                        Contract ID Asset RGB
+                        RGB Asset Contract ID
                         {activeNode.assets.length > 0 ? (
                           <select
                             value={channelAssetId || activeNode.assets[0]?.assetId || ''}
@@ -1933,7 +1932,7 @@ export function CenterWorkspace({
                       </label>
 
                       <label className="compact-label">
-                        Asset Amount da allocare nel canale
+                        Asset Amount to allocate in channel
                         <input
                           inputMode="numeric"
                           value={channelAssetAmount}
@@ -1950,7 +1949,7 @@ export function CenterWorkspace({
                     disabled={channelBusy || !channelCapacitySat.trim()}
                     onClick={() => void handleOpenChannelClick()}
                   >
-                    {channelBusy ? 'Apertura Canale...' : '⚡ Apri Canale'}
+                    {channelBusy ? 'Opening Channel...' : '⚡ Open Channel'}
                   </button>
 
                   {channelNotice && (
@@ -1967,15 +1966,15 @@ export function CenterWorkspace({
               </div>
             )}
 
-            {/* SUB-TAB 4: OPERAZIONI L1 & ASSET RGB (UTXO / NIA) */}
+            {/* SUB-TAB 4: L1 OPERATIONS & RGB ASSETS (UTXO / NIA) */}
             {manualSubTab === 'l1' && (
               <div className="subtab-content">
-                {/* 1. Prepara UTXO RGB */}
+                {/* 1. Prepare RGB UTXOs */}
                 <div className="form-card">
-                  <h3>1. Prepara UTXO Colorabili RGB (On-Chain)</h3>
+                  <h3>1. Prepare Colorable RGB UTXOs (On-Chain)</h3>
                   <div className="row-3col">
                     <label className="compact-label">
-                      Numero UTXO (1–8)
+                      UTXO Count (1–8)
                       <input
                         inputMode="numeric"
                         value={utxoCount}
@@ -1983,7 +1982,7 @@ export function CenterWorkspace({
                       />
                     </label>
                     <label className="compact-label">
-                      Dimensione UTXO (sats)
+                      UTXO Size (sats)
                       <input
                         inputMode="numeric"
                         value={utxoSizeSat}
@@ -2005,16 +2004,16 @@ export function CenterWorkspace({
                     disabled={l1Busy}
                     onClick={() => void handlePrepareUtxosClick()}
                   >
-                    {l1Busy ? 'Preparazione UTXO...' : '🧱 Prepara UTXO RGB'}
+                    {l1Busy ? 'Preparing UTXOs...' : '🧱 Prepare RGB UTXOs'}
                   </button>
                 </div>
 
-                {/* 2. Emetti Asset NIA */}
+                {/* 2. Issue NIA Asset */}
                 <div className="form-card">
-                  <h3>2. Emetti Nuovo Asset RGB (Schema NIA)</h3>
+                  <h3>2. Issue New RGB Asset (NIA Schema)</h3>
                   <div className="row-2col">
                     <label className="compact-label">
-                      Ticker (2–8 lettere maiuscole)
+                      Ticker (2–8 uppercase letters)
                       <input
                         value={niaTicker}
                         onChange={e => setNiaTicker(e.target.value.toUpperCase())}
@@ -2022,7 +2021,7 @@ export function CenterWorkspace({
                       />
                     </label>
                     <label className="compact-label">
-                      Nome Asset
+                      Asset Name
                       <input
                         value={niaName}
                         onChange={e => setNiaName(e.target.value)}
@@ -2032,7 +2031,7 @@ export function CenterWorkspace({
                   </div>
                   <div className="row-2col">
                     <label className="compact-label">
-                      Quantità / Supply da emettere
+                      Amount / Supply to issue
                       <input
                         inputMode="numeric"
                         value={niaAmount}
@@ -2041,7 +2040,7 @@ export function CenterWorkspace({
                       />
                     </label>
                     <label className="compact-label">
-                      Precisione (0–6)
+                      Precision (0–6)
                       <input
                         inputMode="numeric"
                         value={niaPrecision}
@@ -2056,19 +2055,19 @@ export function CenterWorkspace({
                     disabled={l1Busy || !niaTicker.trim() || !niaName.trim() || !niaAmount.trim()}
                     onClick={() => void handleIssueNiaClick()}
                   >
-                    {l1Busy ? 'Emissione in corso...' : '🪙 Emetti Asset NIA'}
+                    {l1Busy ? 'Issuing Asset...' : '🪙 Issue NIA Asset'}
                   </button>
 
                   {lastIssuedAsset && (
                     <div className="issued-asset-highlight">
                       <div className="card-header-row">
                         <span className="status-pill pill-success">
-                          EMESSO: {lastIssuedAsset.ticker}
+                          ISSUED: {lastIssuedAsset.ticker}
                         </span>
                         <span>Supply: {formatNumber(lastIssuedAsset.issuedSupply)}</span>
                       </div>
                       <CopyableChip
-                        label="Contract ID Emesso"
+                        label="Issued Contract ID"
                         value={lastIssuedAsset.assetId}
                         truncate={false}
                       />
@@ -2076,9 +2075,9 @@ export function CenterWorkspace({
                   )}
                 </div>
 
-                {/* 3. Verifica Saldo per Contract ID */}
+                {/* 3. Query Balance by Contract ID */}
                 <div className="form-card">
-                  <h3>3. Verifica Saldo Puntuale per Contract ID</h3>
+                  <h3>3. Query Balance by Contract ID</h3>
                   <div className="input-with-action">
                     <input
                       value={lookupAssetId}
@@ -2091,7 +2090,7 @@ export function CenterWorkspace({
                       disabled={l1Busy || !lookupAssetId.trim()}
                       onClick={() => void handleLookupBalanceClick()}
                     >
-                      Interroga Saldo
+                      Query Balance
                     </button>
                   </div>
 

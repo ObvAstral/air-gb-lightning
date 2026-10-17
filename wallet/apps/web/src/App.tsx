@@ -415,7 +415,7 @@ export function App() {
           blocks,
         });
         setChainHeight(res.height);
-        setChainMessage(`Minati +${res.mined} blocchi. Nuova altezza: #${res.height}.`);
+        setChainMessage(`Mined +${res.mined} blocks. New height: #${res.height}.`);
         await Promise.all([refreshNodeSnapshot('user'), refreshNodeSnapshot('alice'), refreshNodeSnapshot('bob')]);
       } catch (err) {
         setChainError((err as Error).message);
@@ -436,7 +436,7 @@ export function App() {
       try {
         await session.api('/api/wallet/sync', {});
         await refreshNodeSnapshot(id);
-        patchNodeData(id, { notice: 'Sincronizzazione completata.' });
+        patchNodeData(id, { notice: 'Synchronization completed.' });
       } catch (err) {
         patchNodeData(id, { busy: false, error: (err as Error).message });
       }
@@ -468,7 +468,7 @@ export function App() {
         readHeight(),
         refreshHealth(),
       ]);
-      setChainMessage('Tutti i nodi Regtest sincronizzati.');
+      setChainMessage('All Regtest nodes synchronized.');
     } catch (err) {
       setChainError((err as Error).message);
     } finally {
@@ -580,7 +580,7 @@ export function App() {
     const activeSession = getSessionForNode(activeNodeId);
     const activeBaseUrl = getBaseUrlForNode(activeNodeId);
     if (!activeSession.token) {
-      setQvacError('Sessione nodo non attiva.');
+      setQvacError('Node session is not active.');
       return null;
     }
 
@@ -695,7 +695,7 @@ export function App() {
         setQvacLatencyMs(latency);
       } else if (!detectedSetup) {
         throw new Error(
-          interpretData.message ?? interpretData.code ?? 'Impossibile interpretare il prompt con QVAC',
+          interpretData.message ?? interpretData.code ?? 'Failed to interpret prompt with QVAC',
         );
       }
 
@@ -818,7 +818,7 @@ export function App() {
         executionStatus: 'idle',
         executionMessage: candidateInvoice || detectedSetup
           ? ''
-          : 'Suggerimento: allega o genera prima una Invoice da Bob per abilitare Prepare Payment diretto.',
+          : 'Tip: attach or generate an Invoice from Bob first to enable direct Prepare Payment.',
       };
 
       setChatCards(prev => [newCard, ...prev]);
@@ -903,7 +903,7 @@ export function App() {
                   ...c,
                   preparedIntent: intent,
                   executionStatus: 'prepared',
-                  executionMessage: `Pagamento preparato (${intent.id.slice(0, 10)}…). Pronto per Confirm & Send.`,
+                  executionMessage: `Payment prepared (${intent.id.slice(0, 10)}…). Ready for Confirm & Send.`,
                 }
               : c,
           ),
@@ -946,7 +946,7 @@ export function App() {
                   ...c,
                   preparedIntent: confirmed,
                   executionStatus: 'completed',
-                  executionMessage: `Pagamento confermato! Stato finale: ${confirmed.status.toUpperCase()}.`,
+                  executionMessage: `Payment confirmed! Final status: ${confirmed.status.toUpperCase()}.`,
                 }
               : c,
           ),
@@ -979,7 +979,7 @@ export function App() {
       );
 
       try {
-        let message = 'Operazione eseguita con successo.';
+        let message = 'Operation executed successfully.';
         if (card.setupDraft.kind === 'prepare_utxos') {
           const res = await session.api<{ status: string }>('/api/wallet/rgb/utxos', {
             count: card.setupDraft.count,
@@ -988,8 +988,8 @@ export function App() {
           });
           message =
             res.status === 'ready'
-              ? 'UTXO RGB già disponibili sul nodo.'
-              : 'UTXO RGB richiesti. Mina 1 blocco per confermarli.';
+              ? 'RGB UTXOs are already available on the node.'
+              : 'RGB UTXOs requested. Mine 1 block to confirm them.';
         } else if (card.setupDraft.kind === 'issue_nia') {
           const created = await session.api<{ assetId: string; ticker: string }>(
             '/api/wallet/rgb/issue',
@@ -1000,14 +1000,14 @@ export function App() {
               amounts: [card.setupDraft.amount],
             },
           );
-          message = `Asset ${created.ticker} emesso con Contract ID: ${created.assetId}`;
+          message = `Asset ${created.ticker} issued with Contract ID: ${created.assetId}`;
         } else if (card.setupDraft.kind === 'open_channel') {
           await session.api('/api/wallet/channels/open', {
             peer: card.setupDraft.peer,
             capacitySat: card.setupDraft.capacitySat,
             public: true,
           });
-          message = 'Apertura canale inviata! Mina +6 blocchi per renderlo READY.';
+          message = 'Channel opening submitted! Mine +6 blocks to make it READY.';
         }
 
         setChatCards(prev =>
@@ -1220,7 +1220,7 @@ export function App() {
         patchNodeData(id, {
           busy: false,
           lastInvoice: created.invoice,
-          notice: 'Invoice Test generata e pre-caricata per il pagamento!',
+          notice: 'Test Invoice generated and pre-loaded for payment!',
         });
         setPaymentDraft(prev => ({
           ...prev,
@@ -1298,8 +1298,8 @@ export function App() {
       const res = await session.api<{ status: string }>('/api/wallet/rgb/utxos', input);
       await refreshNodeSnapshot(activeNodeId);
       return res.status === 'ready'
-        ? 'UTXO colorabili RGB già pronti sul nodo.'
-        : 'Creazione UTXO richiesta. Mina 1 blocco nella barra di sinistra per confermare.';
+        ? 'Colorable RGB UTXOs are already ready on the node.'
+        : 'UTXO creation requested. Mine 1 block in the left sidebar to confirm.';
     },
     [activeNodeId, getSessionForNode, refreshNodeSnapshot],
   );
@@ -1415,7 +1415,7 @@ export function App() {
   return (
     <div className="app-shell">
       <div className="three-col-layout">
-        {/* COLONNA 1 (SINISTRA): Servizi, Chain & Keystore */}
+        {/* COLUMN 1 (LEFT): Services, Chain & Keystore */}
         <LeftServiceSidebar
           health={health}
           healthLoading={healthLoading}
@@ -1440,7 +1440,7 @@ export function App() {
           onApplyPreset={handleApplyPreset}
         />
 
-        {/* COLONNA 2 (CENTRALE): Wallet WDK Overview + QVAC Chat + Manual TX Builder */}
+        {/* COLUMN 2 (CENTER): WDK Wallet Overview + QVAC Chat + Manual TX Builder */}
         <CenterWorkspace
           nodes={nodesList}
           activeNode={activeNodeSnapshot}
@@ -1500,7 +1500,7 @@ export function App() {
           onQueryAssetBalance={handleQueryAssetBalance}
         />
 
-        {/* COLONNA 3 (DESTRA): Lista Nodi Regtest & Debug */}
+        {/* COLUMN 3 (RIGHT): Regtest Nodes List & Debug */}
         <RightNodesInspector
           nodes={nodesList}
           activeNodeId={activeNodeSnapshot.id}
@@ -1513,12 +1513,12 @@ export function App() {
 
       <footer className="app-footer">
         <span>
-          <strong>AIR-GB · Tether WDK + RGB Lightning + QVAC AI</strong> · Concorrenza protetta via{' '}
+          <strong>AIR-GB · Tether WDK + RGB Lightning + QVAC AI</strong> · Concurrency protected via{' '}
           <code>revision + AbortController</code>.
         </span>
         <span className="footer-disclaimer">
-          Disclaimer: L&apos;interpretazione QVAC e la compilazione deterministica generano proposte
-          validate, ma l&apos;enforcement reale dei vincoli non è ancora attivo a livello protocollo.
+          Disclaimer: QVAC interpretation and deterministic compilation generate validated
+          proposals, but protocol-level enforcement of constraints is not yet active.
         </span>
       </footer>
     </div>

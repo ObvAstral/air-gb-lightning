@@ -76,32 +76,32 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
 
   const ready = state?.node === 'ready';
   return <section>
-    <h2>Pagamento {label}</h2>
-    {offline && <p className="error" role="alert">Nodo non raggiungibile.</p>}
+    <h2>Payment {label}</h2>
+    {offline && <p className="error" role="alert">Node unreachable.</p>}
     {ready && <>
-      <h3>Invoice RGB Lightning</h3>
-      <p>Minimo HTLC di questa versione: {RGB_HTLC_MINIMUM_MSAT} msat.</p>
+      <h3>RGB Lightning Invoice</h3>
+      <p>Minimum HTLC for this version: {RGB_HTLC_MINIMUM_MSAT} msat.</p>
       <div className="row">
         <label>msat<input value={receiveAmount} onChange={event => { setReceiveAmount(event.target.value); setReceivedInvoice(''); }} inputMode="numeric" /></label>
         <label>Contract ID<input value={receiveAssetId} onChange={event => { setReceiveAssetId(event.target.value); setReceivedInvoice(''); }} /></label>
-        <label>Unità RGB<input value={receiveAssetAmount} onChange={event => { setReceiveAssetAmount(event.target.value); setReceivedInvoice(''); }} inputMode="numeric" /></label>
+        <label>RGB Units<input value={receiveAssetAmount} onChange={event => { setReceiveAssetAmount(event.target.value); setReceivedInvoice(''); }} inputMode="numeric" /></label>
       </div>
       <button disabled={busy || !receiveAssetId || !receiveAssetAmount || !receiveAmount} onClick={() => void action(async () => {
         const created = await api<{ invoice: string }>('/api/wallet/receive/lightning', { amountMsat: receiveAmount, expirySec: 3600, assetId: receiveAssetId, assetAmount: receiveAssetAmount });
         setReceivedInvoice(created.invoice);
         setInvoiceStatus(null);
-      })}>Crea invoice</button>
+      })}>Create invoice</button>
       {receivedInvoice && <label>Invoice<textarea readOnly value={receivedInvoice} /></label>}
-      {receivedInvoice && <button disabled={busy} onClick={() => void action(async () => setInvoiceStatus(await api('/api/wallet/receive/lightning/status', { invoice: receivedInvoice })))}>Stato invoice</button>}
+      {receivedInvoice && <button disabled={busy} onClick={() => void action(async () => setInvoiceStatus(await api('/api/wallet/receive/lightning/status', { invoice: receivedInvoice })))}>Invoice status</button>}
       {invoiceStatus !== null && <pre>{JSON.stringify(invoiceStatus, null, 2)}</pre>}
-      <h3>Invia</h3>
-      <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setAlgorithmSelection(null); setIntent(null); }} /></label>
-      <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setAlgorithmSelection(null); setIntent(null); }} inputMode="numeric" /></label>
-      <label>Algoritmo di routing<select disabled={busy || intent !== null} value={algorithm} onChange={event => setAlgorithm(event.target.value as RoutingAlgorithm)}>
+      <h3>Send</h3>
+      <label>Lightning regtest invoice<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setAlgorithmSelection(null); setIntent(null); }} /></label>
+      <label>msat, only if the invoice has no amount<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setAlgorithmSelection(null); setIntent(null); }} inputMode="numeric" /></label>
+      <label>Routing algorithm<select disabled={busy || intent !== null} value={algorithm} onChange={event => setAlgorithm(event.target.value as RoutingAlgorithm)}>
         {ROUTING_ALGORITHMS.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
       {algorithm === 'multi_objective' && <div className="row">
-        {(['fee', 'reliability', 'cltv', 'hops'] as const).map(key => <label key={key}>Peso {key}<input type="number" min="0" max="1000000" step="1" disabled={busy || intent !== null} value={weights[key]} onChange={event => setWeights(previous => ({ ...previous, [key]: Number(event.target.value) }))} /></label>)}
+        {(['fee', 'reliability', 'cltv', 'hops'] as const).map(key => <label key={key}>Weight {key}<input type="number" min="0" max="1000000" step="1" disabled={busy || intent !== null} value={weights[key]} onChange={event => setWeights(previous => ({ ...previous, [key]: Number(event.target.value) }))} /></label>)}
       </div>}
       <button disabled={busy || !sendInvoice} onClick={() => void action(async () => {
         setCompileResult(null);
@@ -109,21 +109,21 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
         setAlgorithmSelection(null);
         setIntent(null);
         setDecoded(await api<Decoded>('/api/payments/decode', { invoice: sendInvoice }));
-      })}>Decodifica</button>
+      })}>Decode</button>
       {decoded && <div>
         <dl>
           <dt>Payment hash</dt><dd>{decoded.paymentHash}</dd>
-          <dt>Importo</dt><dd>{decoded.amountMsat ?? `${sendAmount || 'da indicare'} msat`}</dd>
+          <dt>Amount</dt><dd>{decoded.amountMsat ?? `${sendAmount || 'to be specified'} msat`}</dd>
           <dt>Asset</dt><dd>{decoded.assetId ?? 'BTC'} {decoded.assetAmount ?? ''}</dd>
-          <dt>Scadenza</dt><dd>{new Date(decoded.expiresAt).toLocaleString()}</dd>
+          <dt>Expires</dt><dd>{new Date(decoded.expiresAt).toLocaleString()}</dd>
         </dl>
-        <label>Vincoli in linguaggio naturale (opzionale, via QVAC)
-          <input value={constraintText} disabled={busy || intent !== null} onChange={event => { setConstraintText(event.target.value); setCompileResult(null); }} placeholder="Es. Massimo 10 sat di commissioni, evita Bob" maxLength={1000} />
+        <label>Natural language constraints (optional, via QVAC)
+          <input value={constraintText} disabled={busy || intent !== null} onChange={event => { setConstraintText(event.target.value); setCompileResult(null); }} placeholder="E.g. At most 10 sat in fees, avoid Bob" maxLength={1000} />
         </label>
         <div className="row">
           <button disabled={busy || intent !== null || !constraintText.trim()} onClick={() => void action(async () => {
             const amount = decoded.amountMsat ?? sendAmount;
-            if (!amount) throw new Error('Indicare prima l’importo in msat');
+            if (!amount) throw new Error('Please specify the amount in msat first');
             const interpreted = await api<{ extracted: ExtractedConstraints; latencyMs: number }>('/api/constraints/interpret', { text: constraintText });
             setQvacLatencyMs(interpreted.latencyMs);
             const compiled = await api<CompileResult>('/api/constraints/compile', {
@@ -138,18 +138,18 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
               setAlgorithm('multi_objective');
               setWeights({ fee: 5, reliability: 100, cltv: 5, hops: 10 });
             }
-          })}>Interpreta e compila vincoli (QVAC)</button>
-          {compileResult && <button disabled={busy || intent !== null} onClick={() => { setCompileResult(null); setQvacLatencyMs(null); }}>Rimuovi vincoli</button>}
+          })}>Interpret and compile constraints (QVAC)</button>
+          {compileResult && <button disabled={busy || intent !== null} onClick={() => { setCompileResult(null); setQvacLatencyMs(null); }}>Remove constraints</button>}
         </div>
         {compileResult && <div className="notice">
-          <p><strong>Policy QVAC: {compileResult.code}</strong> ({compileResult.status}){qvacLatencyMs !== null ? ` · ${qvacLatencyMs} ms` : ''}</p>
-          {compileResult.normalized && <p>Fee max: {compileResult.normalized.maxRoutingFeeMsat ?? 'nessun limite'} msat · Nodi esclusi: {compileResult.normalized.excludedNodeIds.join(', ') || 'nessuno'} · Priorità: {compileResult.normalized.priority} · Privacy: {compileResult.normalized.privacyPreference}</p>}
+          <p><strong>QVAC Policy: {compileResult.code}</strong> ({compileResult.status}){qvacLatencyMs !== null ? ` · ${qvacLatencyMs} ms` : ''}</p>
+          {compileResult.normalized && <p>Max fee: {compileResult.normalized.maxRoutingFeeMsat ?? 'no limit'} msat · Excluded nodes: {compileResult.normalized.excludedNodeIds.join(', ') || 'none'} · Priority: {compileResult.normalized.priority} · Privacy: {compileResult.normalized.privacyPreference}</p>}
           {compileResult.issues.map((issue, idx) => <p key={idx} className="error">{issue}</p>)}
         </div>}
         <div className="row">
           <button disabled={busy || intent !== null} onClick={() => void action(async () => {
             const amount = decoded.amountMsat ?? sendAmount;
-            if (!amount) throw new Error('Indicare prima l’importo in msat');
+            if (!amount) throw new Error('Please specify the amount in msat first');
             const selected = await api<AlgorithmSelectionResult>('/api/routing/select-algorithm', {
               invoice: decoded.invoice,
               amountMsat: amount,
@@ -164,19 +164,19 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
             setAlgorithm(selected.selectedAlgorithm);
             setWeights(selected.recommendedWeights);
             await refresh();
-          })}>Scegli algoritmo + valuta canali (QVAC Feature 2+3)</button>
+          })}>Select algorithm + score channels (QVAC Feature 2+3)</button>
           <button disabled={busy} onClick={() => void action(async () => {
             await api('/api/routing/telemetry/seed', {});
             await refresh();
-          })}>Popola telemetria RAG demo{telemetryStatus ? ` (${telemetryStatus.totalSqliteCount ?? telemetryStatus.count})` : ''}</button>
+          })}>Seed demo RAG telemetry{telemetryStatus ? ` (${telemetryStatus.totalSqliteCount ?? telemetryStatus.count})` : ''}</button>
         </div>
         <div className="row">
-          <label>Nodo fixture
+          <label>Fixture node
             <select disabled={busy} value={fixtureNodeId} onChange={e => setFixtureNodeId(e.target.value)}>
               {SYNTHETIC_NODES.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
-          <label>Storico tx
+          <label>Tx history
             <select disabled={busy} value={fixtureLevel} onChange={e => setFixtureLevel(Number(e.target.value) as SyntheticHistoryLevel)}>
               {SYNTHETIC_LEVELS.map(lv => <option key={lv} value={lv}>{lv} tx</option>)}
             </select>
@@ -186,29 +186,29 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
               nodeId: fixtureNodeId,
               level: fixtureLevel,
             });
-            setMessage(`Caricato storico first-party per '${loaded.nodeId}' (${loaded.level} tx): ${loaded.loadedSqliteCount} episodi SQLite, ${loaded.ingestedRagCount} indicizzati in QVAC TurboVec.`);
+            setMessage(`Loaded first-party history for '${loaded.nodeId}' (${loaded.level} tx): ${loaded.loadedSqliteCount} SQLite episodes, ${loaded.ingestedRagCount} indexed in QVAC TurboVec.`);
             await refresh();
-          })}>Carica storico nodo (first-party)</button>
+          })}>Load node history (first-party)</button>
         </div>
         {telemetryStatus?.activeFixture && <p className="notice">
-          Fixture attiva: <strong>{telemetryStatus.activeFixture.nodeId}</strong> ({telemetryStatus.activeFixture.datasetId} · {telemetryStatus.activeFixture.channelCount} canali locali · {telemetryStatus.totalSqliteCount ?? telemetryStatus.count} episodi first-party)
+          Active fixture: <strong>{telemetryStatus.activeFixture.nodeId}</strong> ({telemetryStatus.activeFixture.datasetId} · {telemetryStatus.activeFixture.channelCount} local channels · {telemetryStatus.totalSqliteCount ?? telemetryStatus.count} first-party episodes)
         </p>}
         {algorithmSelection && <div className="notice">
-          <p><strong>Feature 3 — Algoritmo scelto da QVAC: <code>{algorithmSelection.selectedAlgorithm}</code></strong> ({algorithmSelection.reasonCode}) · max_paths={algorithmSelection.recommendedRouting.max_paths ?? 1} · {algorithmSelection.latencyMs} ms</p>
+          <p><strong>Feature 3 — Algorithm selected by QVAC: <code>{algorithmSelection.selectedAlgorithm}</code></strong> ({algorithmSelection.reasonCode}) · max_paths={algorithmSelection.recommendedRouting.max_paths ?? 1} · {algorithmSelection.latencyMs} ms</p>
           <p>{algorithmSelection.rationale}</p>
-          <p>Fattibilità (RAM effimera rimossa: {algorithmSelection.feasibility.ephemeralRamWiped ? 'sì' : 'no'}): single-path={algorithmSelection.feasibility.singlePathPossible ? 'sì' : 'no'} · MPP={algorithmSelection.feasibility.mppPossible ? 'sì' : 'no'} · canali attivi={algorithmSelection.feasibility.usableChannelCount}</p>
+          <p>Feasibility (ephemeral RAM wiped: {algorithmSelection.feasibility.ephemeralRamWiped ? 'yes' : 'no'}): single-path={algorithmSelection.feasibility.singlePathPossible ? 'yes' : 'no'} · MPP={algorithmSelection.feasibility.mppPossible ? 'yes' : 'no'} · active channels={algorithmSelection.feasibility.usableChannelCount}</p>
         </div>}
         {channelScore && <div className="notice">
-          <p><strong>Scoring QVAC ({channelScore.ragBackend}): profilo {channelScore.overallProfile}</strong> · {channelScore.latencyMs} ms{channelScore.vectorStoreId ? ` · store ${channelScore.vectorStoreId}` : ''}</p>
+          <p><strong>QVAC Scoring ({channelScore.ragBackend}): profile {channelScore.overallProfile}</strong> · {channelScore.latencyMs} ms{channelScore.vectorStoreId ? ` · store ${channelScore.vectorStoreId}` : ''}</p>
           <p>{channelScore.summary}</p>
-          <p>Pesi consigliati: fee={channelScore.recommendedWeights.fee}, reliability={channelScore.recommendedWeights.reliability}, cltv={channelScore.recommendedWeights.cltv}, hops={channelScore.recommendedWeights.hops}</p>
+          <p>Recommended weights: fee={channelScore.recommendedWeights.fee}, reliability={channelScore.recommendedWeights.reliability}, cltv={channelScore.recommendedWeights.cltv}, hops={channelScore.recommendedWeights.hops}</p>
           {channelScore.channels.length > 0 && <ul>
             {channelScore.channels.map(ch => <li key={ch.channelId}>
               <strong>[{ch.classification.toUpperCase()} · {ch.score}/100]</strong> {ch.peerAlias ? `${ch.peerAlias} (${ch.channelId})` : ch.channelId}: {ch.reason}
             </li>)}
           </ul>}
           {channelScore.ragHits.length > 0 && <details>
-            <summary>Episodi storici recuperati via QVAC RAG ({channelScore.ragHits.length})</summary>
+            <summary>Historical episodes retrieved via QVAC RAG ({channelScore.ragHits.length})</summary>
             <ul>
               {channelScore.ragHits.map((hit, idx) => <li key={`${hit.fileId}-${idx}`}>
                 <code>score={hit.score}</code> {hit.text}
@@ -234,15 +234,15 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
               };
           const constraints = compileResult?.policy ?? {};
           setIntent(await api<Intent>('/api/payments/prepare', { id, invoice: decoded.invoice, ...(sendAmount ? { amountMsat: sendAmount } : {}), constraints, routing }));
-        })}>Prepara</button>
+        })}>Prepare</button>
       </div>}
       {intent && <div className="notice">
-        <p>Intento {intent.id}: {intent.status}. {intent.amountMsat} msat{intent.assetId ? ` · ${intent.assetId}` : ''}. Algoritmo: {intent.routing.algorithm}{intent.routing.max_fee_msat !== undefined ? ` · max fee: ${intent.routing.max_fee_msat} msat` : ''}{intent.routing.excluded_nodes?.length ? ` · esclusi: ${intent.routing.excluded_nodes.length}` : ''}.</p>
-        <button disabled={busy || intent.status !== 'prepared' || !state?.sendEnabled} onClick={() => void action(async () => { setIntent(await api<Intent>('/api/payments/confirm', { id: intent.id })); await refresh(); })}>Conferma invio</button>
-        <button disabled={busy} onClick={() => void action(async () => setIntent(await api<Intent>(`/api/payments/${intent.id}`)))}>Aggiorna stato</button>
+        <p>Intent {intent.id}: {intent.status}. {intent.amountMsat} msat{intent.assetId ? ` · ${intent.assetId}` : ''}. Algorithm: {intent.routing.algorithm}{intent.routing.max_fee_msat !== undefined ? ` · max fee: ${intent.routing.max_fee_msat} msat` : ''}{intent.routing.excluded_nodes?.length ? ` · excluded: ${intent.routing.excluded_nodes.length}` : ''}.</p>
+        <button disabled={busy || intent.status !== 'prepared' || !state?.sendEnabled} onClick={() => void action(async () => { setIntent(await api<Intent>('/api/payments/confirm', { id: intent.id })); await refresh(); })}>Confirm send</button>
+        <button disabled={busy} onClick={() => void action(async () => setIntent(await api<Intent>(`/api/payments/${intent.id}`)))}>Refresh status</button>
       </div>}
-      <h3>Storico Lightning</h3>
-      {history.length ? <ul>{history.map((payment, index) => <li key={`${payment.paymentHash ?? 'unknown'}-${index}`}>{payment.status} · {payment.amountMsat ?? '?'} msat · {payment.assetId ?? 'BTC'}{payment.assetAmount ? ` · ${payment.assetAmount}` : ''}</li>)}</ul> : <p>Nessun pagamento.</p>}
+      <h3>Lightning History</h3>
+      {history.length ? <ul>{history.map((payment, index) => <li key={`${payment.paymentHash ?? 'unknown'}-${index}`}>{payment.status} · {payment.amountMsat ?? '?'} msat · {payment.assetId ?? 'BTC'}{payment.assetAmount ? ` · ${payment.assetAmount}` : ''}</li>)}</ul> : <p>No payments.</p>}
     </>}
     {message && <p className="notice" role="status">{message}</p>}
   </section>;

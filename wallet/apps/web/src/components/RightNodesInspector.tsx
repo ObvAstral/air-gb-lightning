@@ -79,7 +79,7 @@ export function CopyableChip({ label, value, truncate = true }: CopyableChipProp
     return (
       <div className="copy-chip copy-chip-empty">
         <span className="chip-key">{label}</span>
-        <span className="chip-val muted-text">n/d</span>
+        <span className="chip-val muted-text">n/a</span>
       </div>
     );
   }
@@ -110,9 +110,9 @@ export function CopyableChip({ label, value, truncate = true }: CopyableChipProp
         type="button"
         className={`chip-copy-btn ${copied ? 'copied' : ''}`}
         onClick={() => void handleCopy()}
-        title={`Copia ${label}`}
+        title={`Copy ${label}`}
       >
-        {copied ? '✓ Copiato' : 'Copia'}
+        {copied ? '✓ Copied' : 'Copy'}
       </button>
     </div>
   );
@@ -130,7 +130,7 @@ export type RightNodesInspectorProps = {
 function formatSats(val: string | number | null | undefined): string {
   if (val === null || val === undefined || val === '') return '0';
   const num = Number(val);
-  return Number.isFinite(num) ? num.toLocaleString('it-IT') : String(val);
+  return Number.isFinite(num) ? num.toLocaleString('en-US') : String(val);
 }
 
 function computeLiquidityPct(localStr: string | null, remoteStr: string | null): number {
@@ -149,11 +149,11 @@ export function RightNodesInspector({
   onUseInvoiceForPayment,
 }: RightNodesInspectorProps) {
   return (
-    <aside className="right-inspector" aria-label="Ispezione Nodi Regtest e Debug">
+    <aside className="right-inspector" aria-label="Regtest Nodes Inspection and Debug">
       <div className="inspector-top-header">
         <div>
           <span className="eyebrow">REGTEST TOPOLOGY · DEBUG</span>
-          <h2>Nodi Regtest ({nodes.length})</h2>
+          <h2>Regtest Nodes ({nodes.length})</h2>
         </div>
         <span className="mono-badge">127.0.0.1</span>
       </div>
@@ -169,7 +169,7 @@ export function RightNodesInspector({
               key={node.id}
               className={`inspector-node-card ${isActive ? 'node-card-active' : ''} accent-${node.accent}`}
             >
-              {/* Header Card Nodo */}
+              {/* Node Card Header */}
               <div className="node-card-header">
                 <div className="node-title-group">
                   <span className={`node-avatar avatar-${node.accent}`}>
@@ -180,7 +180,7 @@ export function RightNodesInspector({
                       <h3>
                         {node.label} <span className="port-tag">:{node.port}</span>
                       </h3>
-                      {isActive && <span className="active-operator-badge">OPERATIVO</span>}
+                      {isActive && <span className="active-operator-badge">ACTIVE</span>}
                     </div>
                     <div className="node-sub-badges">
                       <span
@@ -215,9 +215,9 @@ export function RightNodesInspector({
                       type="button"
                       className="btn-secondary btn-xs"
                       onClick={() => onSelectActiveNode(node.id)}
-                      title={`Imposta ${node.label} come nodo attivo al centro`}
+                      title={`Set ${node.label} as the active node in the center workspace`}
                     >
-                      Usa
+                      Use
                     </button>
                   )}
                   <button
@@ -225,7 +225,7 @@ export function RightNodesInspector({
                     className="btn-secondary btn-xs"
                     disabled={node.busy || node.offline || !isReady}
                     onClick={() => void onSyncNode(node.id)}
-                    title={`Sincronizza il nodo ${node.label}`}
+                    title={`Sync node ${node.label}`}
                   >
                     {node.busy ? '...' : '↻ Sync'}
                   </button>
@@ -234,7 +234,7 @@ export function RightNodesInspector({
 
               {node.offline && (
                 <div className="error compact-notice" role="alert">
-                  Nodo {node.label} non raggiungibile su {node.baseUrl}.
+                  Node {node.label} unreachable at {node.baseUrl}.
                 </div>
               )}
 
@@ -250,36 +250,36 @@ export function RightNodesInspector({
                 </div>
               )}
 
-              {/* Statistiche Rapide Sats & Canali */}
+              {/* Quick Sats & Channels Metrics */}
               <div className="node-metrics-strip">
                 <div className="metric-cell">
-                  <span className="metric-label">BTC Spendibili</span>
+                  <span className="metric-label">Spendable BTC</span>
                   <strong className="metric-value">
                     {formatSats(node.summary?.btcSpendableSat)} <small>sats</small>
                   </strong>
                 </div>
                 <div className="metric-cell">
-                  <span className="metric-label">Canali LN</span>
+                  <span className="metric-label">LN Channels</span>
                   <strong className="metric-value">
                     {node.channels.filter(c => c.isUsable).length}/{node.channels.length}
                   </strong>
                 </div>
                 <div className="metric-cell">
-                  <span className="metric-label">Asset RGB / UTXO</span>
+                  <span className="metric-label">RGB Assets / UTXO</span>
                   <strong className="metric-value">
-                    {node.assets.length} <small>({utxoEstimate} attiva)</small>
+                    {node.assets.length} <small>({utxoEstimate} active)</small>
                   </strong>
                 </div>
               </div>
 
-              {/* Chip Copiabili 1-Click */}
+              {/* 1-Click Copyable Chips */}
               <div className="chips-stack">
                 <CopyableChip label="Node ID" value={node.summary?.nodeId} />
                 <CopyableChip label="Peer URI" value={node.summary?.peerUri} />
                 <CopyableChip label="BTC On-Chain" value={node.summary?.address} />
               </div>
 
-              {/* Scorciatoia Demo su Bob (e nodi secondari) */}
+              {/* Demo Shortcut on Bob (and secondary nodes) */}
               {node.id === 'bob' && (
                 <div className="bob-shortcut-box">
                   <button
@@ -289,31 +289,31 @@ export function RightNodesInspector({
                     onClick={() => void onQuickGenerateBobInvoice(node.id)}
                   >
                     {node.busy
-                      ? 'Generazione Invoice su Bob...'
-                      : '⚡ Genera Invoice Test su Bob'}
+                      ? 'Generating Invoice on Bob...'
+                      : '⚡ Generate Test Invoice on Bob'}
                   </button>
                   {node.lastInvoice && (
                     <div className="bob-last-invoice">
-                      <CopyableChip label="Ultima Invoice Bob" value={node.lastInvoice} />
+                      <CopyableChip label="Latest Bob Invoice" value={node.lastInvoice} />
                       <button
                         type="button"
                         className="btn-qvac btn-xs full-width"
                         onClick={() => onUseInvoiceForPayment(node.lastInvoice, 'alice')}
                       >
-                        ↗ Carica sul wallet
+                        ↗ Load into Wallet
                       </button>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Vista Strutturata Canali */}
+              {/* Structured Channels View */}
               <div className="inspector-subsection">
                 <div className="subsection-title-row">
-                  <h4>Canali Lightning ({node.channels.length})</h4>
+                  <h4>Lightning Channels ({node.channels.length})</h4>
                 </div>
                 {node.channels.length === 0 ? (
-                  <p className="empty-inline">Nessun canale aperto su {node.label}.</p>
+                  <p className="empty-inline">No open channels on {node.label}.</p>
                 ) : (
                   <div className="structured-list">
                     {node.channels.map((ch, idx) => {
@@ -371,13 +371,13 @@ export function RightNodesInspector({
                 )}
               </div>
 
-              {/* Vista Strutturata Asset RGB */}
+              {/* Structured RGB Assets View */}
               <div className="inspector-subsection">
                 <div className="subsection-title-row">
-                  <h4>Asset RGB NIA ({node.assets.length})</h4>
+                  <h4>RGB NIA Assets ({node.assets.length})</h4>
                 </div>
                 {node.assets.length === 0 ? (
-                  <p className="empty-inline">Nessun asset RGB registrato.</p>
+                  <p className="empty-inline">No RGB assets registered.</p>
                 ) : (
                   <div className="structured-list">
                     {node.assets.map((asset, idx) => {
@@ -391,7 +391,7 @@ export function RightNodesInspector({
                               <strong className="asset-name-text">{asset.name ?? 'Asset'}</strong>
                             </div>
                             <span className="asset-balance-pill">
-                              Spendibile: <strong>{bal?.spendable ?? bal?.settled ?? '—'}</strong>
+                              Spendable: <strong>{bal?.spendable ?? bal?.settled ?? '—'}</strong>
                             </span>
                           </div>
                           <CopyableChip label="Contract ID" value={asset.assetId} />
@@ -402,9 +402,9 @@ export function RightNodesInspector({
                 )}
               </div>
 
-              {/* Cassetto <details> Raw JSON */}
+              {/* Raw JSON <details> Drawer */}
               <details className="debug-drawer">
-                <summary>Raw JSON (Canali / Asset / Invoice)</summary>
+                <summary>Raw JSON (Channels / Assets / Invoice)</summary>
                 <pre>
                   {JSON.stringify(
                     {

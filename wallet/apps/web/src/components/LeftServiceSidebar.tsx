@@ -33,9 +33,9 @@ export const DEMO_PRESETS: DemoPreset[] = [
     id: 'low-fee-rgb',
     title: 'Low-Fee tUSDT Transfer',
     badge: 'QVAC + RLN',
-    description: 'Invia asset RGB con tetto massimo 25 sat di fee e priorità risparmio commissioni.',
+    description: 'Send RGB asset with a maximum fee cap of 25 sat and fee savings priority.',
     targetMode: 'chat',
-    promptText: 'Invia il pagamento RGB sulla invoice corrente con massimo 25 sat di fee e priorità lowest_fee.',
+    promptText: 'Send the RGB payment on the current invoice with at most 25 sat in fees and lowest_fee priority.',
     feeLimitSat: '25',
     priority: 'lowest_fee',
     privacy: null,
@@ -44,9 +44,9 @@ export const DEMO_PRESETS: DemoPreset[] = [
     id: 'high-reliability-mpp',
     title: 'High-Reliability Multi-Objective',
     badge: 'Multi-Objective',
-    description: 'Privilegia affidabilità del canale e riduci il rischio di fallimento HTLC.',
+    description: 'Prioritize channel reliability and reduce HTLC failure risk.',
     targetMode: 'chat',
-    promptText: 'Esegui questo pagamento privilegiando la massima affidabilità del canale, con limite fee di 100 sat.',
+    promptText: 'Execute this payment prioritizing maximum channel reliability, with a fee limit of at most 100 sat.',
     feeLimitSat: '100',
     priority: 'reliability',
     privacy: null,
@@ -55,29 +55,29 @@ export const DEMO_PRESETS: DemoPreset[] = [
     id: 'privacy-single-path',
     title: 'Privacy No-Probing Route',
     badge: 'Privacy',
-    description: 'Evita probing extra sul grafo e forza instradamento su singolo percorso.',
+    description: 'Avoid extra graph probing and force single-path routing.',
     targetMode: 'chat',
-    promptText: 'Invia il pagamento evitando qualsiasi probing aggiuntivo per massimizzare la privacy, fee sotto 50 sat.',
+    promptText: 'Send the payment and avoid extra probing to maximize privacy, with fees less than 50 sat.',
     feeLimitSat: '50',
     priority: 'balanced',
     privacy: 'avoid_extra_probing',
   },
   {
     id: 'chat-setup-utxo-nia',
-    title: 'Setup UTXO & Emissione NIA',
+    title: 'UTXO Setup & NIA Issuance',
     badge: 'L1 Setup',
-    description: 'Proponi in chat la preparazione di 4 UTXO colorabili o emissione asset RGB.',
+    description: 'Propose in chat the preparation of 4 colorable UTXOs or RGB asset issuance.',
     targetMode: 'chat',
-    promptText: 'Prepara 4 UTXO RGB da 200000 sat ciascuno con fee rate 2 sat/vB sul nodo attivo.',
+    promptText: 'Prepare 4 RGB UTXO of 200000 sat each with fee rate 2 sat/vB on the active node.',
   },
   {
     id: 'manual-compile-preset',
-    title: 'Compilatore Vincoli Manuale',
+    title: 'Manual Constraints Compiler',
     badge: 'Manual TX',
-    description: 'Apre il builder manuale pre-configurato con multi_objective e vincoli pronti da compilare.',
+    description: 'Opens the manual builder pre-configured with multi_objective and constraints ready to compile.',
     targetMode: 'manual',
     manualSubTab: 'send',
-    promptText: 'Massimo 40 sat di fee, priorità affidabilità, nessun probing extra.',
+    promptText: 'At most 40 sat fee, reliability priority, avoid extra probing.',
     feeLimitSat: '40',
     priority: 'reliability',
     privacy: 'avoid_extra_probing',
@@ -173,7 +173,7 @@ export function LeftServiceSidebar({
 
   async function handleCreate() {
     if (password.length < 12) {
-      setKeystoreError('La password del keystore deve contenere almeno 12 caratteri.');
+      setKeystoreError('Keystore password must contain at least 12 characters.');
       return;
     }
     setKeystoreBusy(true);
@@ -186,7 +186,7 @@ export function LeftServiceSidebar({
         setRecoveryPhrase(phrase);
         setRecoveryConfirmed(false);
       }
-      setKeystoreNotice(`Keystore BIP39 creato per ${activeNodeLabel}.`);
+      setKeystoreNotice(`BIP39 keystore created for ${activeNodeLabel}.`);
     } catch (err) {
       setKeystoreError((err as Error).message);
     } finally {
@@ -196,11 +196,11 @@ export function LeftServiceSidebar({
 
   async function handleImport() {
     if (password.length < 12) {
-      setKeystoreError('La password del keystore deve contenere almeno 12 caratteri.');
+      setKeystoreError('Keystore password must contain at least 12 characters.');
       return;
     }
     if (wordCount !== 12) {
-      setKeystoreError(`Inserire una frase seed BIP39 valida da 12 parole (trovate: ${wordCount}).`);
+      setKeystoreError(`Please enter a valid 12-word BIP39 seed phrase (found: ${wordCount}).`);
       return;
     }
     setKeystoreBusy(true);
@@ -210,7 +210,7 @@ export function LeftServiceSidebar({
       await onImportKeystore(password, mnemonic.trim());
       setPassword('');
       setMnemonic('');
-      setKeystoreNotice(`Seed BIP39 importato con successo su ${activeNodeLabel}.`);
+      setKeystoreNotice(`BIP39 seed imported successfully on ${activeNodeLabel}.`);
     } catch (err) {
       setKeystoreError((err as Error).message);
     } finally {
@@ -220,7 +220,7 @@ export function LeftServiceSidebar({
 
   async function handleUnlock() {
     if (!password) {
-      setKeystoreError('Inserire la password per sbloccare il nodo.');
+      setKeystoreError('Please enter the password to unlock the node.');
       return;
     }
     setKeystoreBusy(true);
@@ -229,7 +229,7 @@ export function LeftServiceSidebar({
     try {
       await onUnlockNode(password);
       setPassword('');
-      setKeystoreNotice(`Nodo ${activeNodeLabel} sbloccato e operativo.`);
+      setKeystoreNotice(`Node ${activeNodeLabel} unlocked and operational.`);
     } catch (err) {
       setKeystoreError((err as Error).message);
     } finally {
@@ -238,7 +238,7 @@ export function LeftServiceSidebar({
   }
 
   return (
-    <aside className="left-sidebar" aria-label="Servizi, Chain e Keystore">
+    <aside className="left-sidebar" aria-label="Services, Chain and Keystore">
       {/* 1. SERVICE HEALTH MATRIX */}
       <section className="sidebar-card">
         <div className="card-header-row">
@@ -251,7 +251,7 @@ export function LeftServiceSidebar({
             className="btn-secondary btn-xs"
             disabled={healthLoading}
             onClick={() => void onRefreshHealth()}
-            title="Aggiorna stato servizi"
+            title="Refresh service status"
           >
             {healthLoading ? '...' : '↻ Poll'}
           </button>
@@ -313,14 +313,14 @@ export function LeftServiceSidebar({
             disabled={chainBusy}
             onClick={() => void onReadHeight()}
           >
-            Aggiorna
+            Refresh
           </button>
         </div>
 
         <div className="chain-height-box">
-          <span className="muted-label">Altezza Blocco Corrente</span>
+          <span className="muted-label">Current Block Height</span>
           <strong className="chain-height-value">
-            {chainHeight !== null ? `#${chainHeight.toLocaleString()}` : 'Non letta'}
+            {chainHeight !== null ? `#${chainHeight.toLocaleString()}` : 'Not read'}
           </strong>
         </div>
 
@@ -331,7 +331,7 @@ export function LeftServiceSidebar({
             disabled={chainBusy || activeNodeOffline}
             onClick={() => void onMineBlocks(1)}
           >
-            {chainBusy ? 'Mining in corso...' : '⛏️ Mine 1 Block (miner)'}
+            {chainBusy ? 'Mining in progress...' : '⛏️ Mine 1 Block (miner)'}
           </button>
           <button
             type="button"
@@ -339,7 +339,7 @@ export function LeftServiceSidebar({
             disabled={chainBusy || activeNodeOffline}
             onClick={() => void onMineBlocks(6)}
           >
-            {chainBusy ? 'Mining in corso...' : '⚡ +6 Blocchi (Conferma Canali LN)'}
+            {chainBusy ? 'Mining in progress...' : '⚡ +6 Blocks (Confirm LN Channels)'}
           </button>
           <button
             type="button"
@@ -347,7 +347,7 @@ export function LeftServiceSidebar({
             disabled={chainBusy}
             onClick={() => void onSyncAllNodes()}
           >
-            {chainBusy ? 'Sincronizzazione...' : '🔄 Sync All Nodes'}
+            {chainBusy ? 'Synchronizing...' : '🔄 Sync All Nodes'}
           </button>
         </div>
 
@@ -388,7 +388,7 @@ export function LeftServiceSidebar({
         </div>
 
         <label className="compact-label">
-          Nodo Target Keystore
+          Target Keystore Node
           <select
             value={activeNodeId}
             onChange={e => {
@@ -408,10 +408,10 @@ export function LeftServiceSidebar({
         {recoveryPhrase && (
           <div className="recovery-vault-alert" role="alert">
             <div className="recovery-header">
-              <strong>⚠️ Frase di Recupero BIP39 (Mostrata una sola volta)</strong>
+              <strong>⚠️ BIP39 Recovery Phrase (Shown only once)</strong>
             </div>
             <p className="muted-text">
-              Conserva queste 12 parole in luogo sicuro. Non potranno più essere visualizzate dopo la chiusura.
+              Store these 12 words in a safe place. They cannot be viewed again after closing.
             </p>
             <div className="mnemonic-grid">
               {recoveryPhrase.split(/\s+/).map((word, idx) => (
@@ -427,7 +427,7 @@ export function LeftServiceSidebar({
                 checked={recoveryConfirmed}
                 onChange={e => setRecoveryConfirmed(e.target.checked)}
               />
-              <span>Confermo di aver salvato il seed BIP39</span>
+              <span>I confirm I have saved the BIP39 seed</span>
             </label>
             <button
               type="button"
@@ -438,7 +438,7 @@ export function LeftServiceSidebar({
                 setRecoveryConfirmed(false);
               }}
             >
-              Ho salvato la Recovery Phrase
+              I Have Saved the Recovery Phrase
             </button>
           </div>
         )}
@@ -454,7 +454,7 @@ export function LeftServiceSidebar({
                   setKeystoreError('');
                 }}
               >
-                Nuovo Seed
+                New Seed
               </button>
               <button
                 type="button"
@@ -464,37 +464,37 @@ export function LeftServiceSidebar({
                   setKeystoreError('');
                 }}
               >
-                Importa BIP39
+                Import BIP39
               </button>
             </div>
 
             <label className="compact-label">
-              Password Keystore (min. 12 caratteri)
+              Keystore Password (min. 12 characters)
               <input
                 type="password"
                 autoComplete="new-password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Almeno 12 caratteri..."
+                placeholder="At least 12 characters..."
               />
             </label>
             <div className="password-meter">
               <span className={password.length >= 12 ? 'text-emerald' : 'text-amber'}>
-                Lunghezza: {password.length}/12 caratteri
+                Length: {password.length}/12 characters
               </span>
             </div>
 
             {keystoreMode === 'import' && (
               <label className="compact-label">
-                Seed Phrase BIP39 (12 parole)
+                BIP39 Seed Phrase (12 words)
                 <textarea
                   rows={3}
                   value={mnemonic}
                   onChange={e => setMnemonic(e.target.value)}
-                  placeholder="parola1 parola2 ... parola12"
+                  placeholder="word1 word2 ... word12"
                   autoComplete="off"
                 />
-                <span className="field-hint">Parole rilevate: {wordCount}/12</span>
+                <span className="field-hint">Detected words: {wordCount}/12</span>
               </label>
             )}
 
@@ -505,7 +505,7 @@ export function LeftServiceSidebar({
                 disabled={keystoreBusy || activeNodeOffline || password.length < 12}
                 onClick={() => void handleCreate()}
               >
-                {keystoreBusy ? 'Creazione Keystore...' : `🔐 Crea Keystore su ${activeNodeLabel}`}
+                {keystoreBusy ? 'Creating Keystore...' : `🔐 Create Keystore on ${activeNodeLabel}`}
               </button>
             ) : (
               <button
@@ -514,7 +514,7 @@ export function LeftServiceSidebar({
                 disabled={keystoreBusy || activeNodeOffline || password.length < 12 || wordCount !== 12}
                 onClick={() => void handleImport()}
               >
-                {keystoreBusy ? 'Importazione...' : `📥 Importa Seed su ${activeNodeLabel}`}
+                {keystoreBusy ? 'Importing...' : `📥 Import Seed on ${activeNodeLabel}`}
               </button>
             )}
           </div>
@@ -523,16 +523,16 @@ export function LeftServiceSidebar({
         {activeNodeState?.keystoreExists && activeNodeState.node !== 'ready' && (
           <div className="keystore-form">
             <p className="muted-text">
-              Keystore cifrato presente su <strong>{activeNodeLabel} (:{activeNodePort})</strong>. Sblocca il daemon RLN.
+              Encrypted keystore found on <strong>{activeNodeLabel} (:{activeNodePort})</strong>. Unlock the RLN daemon.
             </p>
             <label className="compact-label">
-              Password di Sblocco
+              Unlock Password
               <input
                 type="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Password del keystore..."
+                placeholder="Keystore password..."
               />
             </label>
             <button
@@ -541,7 +541,7 @@ export function LeftServiceSidebar({
               disabled={keystoreBusy || activeNodeOffline || !password}
               onClick={() => void handleUnlock()}
             >
-              {keystoreBusy ? 'Avvio e sblocco RLN...' : `🔓 Unlock ${activeNodeLabel}`}
+              {keystoreBusy ? 'Starting and unlocking RLN...' : `🔓 Unlock ${activeNodeLabel}`}
             </button>
           </div>
         )}
@@ -549,13 +549,13 @@ export function LeftServiceSidebar({
         {activeNodeState?.node === 'ready' && (
           <div className="keystore-ready-summary">
             <div className="kv-row">
-              <span>Nodo RLN</span>
-              <strong className="text-emerald">Operativo (Ready)</strong>
+              <span>RLN Node</span>
+              <strong className="text-emerald">Operational (Ready)</strong>
             </div>
             <div className="kv-row">
-              <span>Invio Regtest</span>
+              <span>Regtest Send</span>
               <strong className={activeNodeState.sendEnabled ? 'text-emerald' : 'text-amber'}>
-                {activeNodeState.sendEnabled ? 'Abilitato (ENABLE_REGTEST_SEND=1)' : 'Disabilitato'}
+                {activeNodeState.sendEnabled ? 'Enabled (ENABLE_REGTEST_SEND=1)' : 'Disabled'}
               </strong>
             </div>
           </div>
@@ -577,12 +577,12 @@ export function LeftServiceSidebar({
       <section className="sidebar-card">
         <div className="card-header-row">
           <div>
-            <span className="eyebrow">SCENARI RAPIDI</span>
+            <span className="eyebrow">QUICK SCENARIOS</span>
             <h2>Demo Prompt Shortcuts</h2>
           </div>
         </div>
         <p className="muted-text">
-          Pre-compila la Chat QVAC o il Manual TX Builder con scenari tipici di test RGB-LN.
+          Pre-fill the QVAC Chat or Manual TX Builder with typical RGB-LN test scenarios.
         </p>
         <div className="preset-list">
           {DEMO_PRESETS.map(preset => (
