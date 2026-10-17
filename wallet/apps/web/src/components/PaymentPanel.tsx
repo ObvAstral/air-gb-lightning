@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNodeSession } from './node-client.js';
-import { ROUTING_ALGORITHMS, type CompileResult, type ExtractedConstraints, type RoutingAlgorithm, type ObjectiveWeights, type PaymentRouting } from '../../../../packages/contracts/types.js';
+import { ROUTING_ALGORITHMS, type ChannelScoringResult, type CompileResult, type ExtractedConstraints, type RoutingAlgorithm, type ObjectiveWeights, type PaymentRouting } from '../../../../packages/contracts/types.js';
 
 const RGB_HTLC_MINIMUM_MSAT = '3000000';
 
@@ -8,6 +8,7 @@ type WalletState = { node: string; sendEnabled: boolean };
 type Decoded = { invoice: string; paymentHash: string; amountMsat: string | null; assetId: string | null; assetAmount: string | null; expiresAt: number; payeePubkey: string | null };
 type Intent = { id: string; paymentHash: string; amountMsat: string; assetId: string | null; status: string; routing: PaymentRouting };
 type NativePayment = { paymentHash: string | null; status: string; amountMsat: string | null; assetId: string | null; assetAmount: string | null };
+type TelemetryStatus = { vectorStoreId: string | null; ragBackend: string; count: number };
 
 type PaymentPanelProps = { label: string; baseUrl: string };
 
@@ -29,6 +30,8 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
   const [constraintText, setConstraintText] = useState('');
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [qvacLatencyMs, setQvacLatencyMs] = useState<number | null>(null);
+  const [channelScore, setChannelScore] = useState<ChannelScoringResult | null>(null);
+  const [telemetryStatus, setTelemetryStatus] = useState<TelemetryStatus | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [history, setHistory] = useState<NativePayment[]>([]);
 
@@ -36,6 +39,8 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
     if (!token) return;
     const next = await api<WalletState>('/api/wallet/state');
     setState(next);
+    const tel = await api<TelemetryStatus>('/api/routing/telemetry').catch(() => null);
+    if (tel) setTelemetryStatus(tel);
     if (next.node === 'ready') setHistory(await api<NativePayment[]>('/api/wallet/history'));
   }, [api, token]);
 
@@ -68,8 +73,8 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
       {receivedInvoice && <button disabled={busy} onClick={() => void action(async () => setInvoiceStatus(await api('/api/wallet/receive/lightning/status', { invoice: receivedInvoice })))}>Stato invoice</button>}
       {invoiceStatus !== null && <pre>{JSON.stringify(invoiceStatus, null, 2)}</pre>}
       <h3>Invia</h3>
-      <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setCompileResult(null); setIntent(null); }} /></label>
-      <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setCompileResult(null); setIntent(null); }} inputMode="numeric" /></label>
+      <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setIntent(null); }} /></label>
+      <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setIntent(null); }} inputMode="numeric" /></label>
       <label>Algoritmo di routing<select disabled={busy || intent !== null} value={algorithm} onChange={event => setAlgorithm(event.target.value as RoutingAlgorithm)}>
         {ROUTING_ALGORITHMS.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
@@ -78,6 +83,7 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
       </div>}
       <button disabled={busy || !sendInvoice} onClick={() => void action(async () => {
         setCompileResult(null);
+        setChannelScore(null);
         setIntent(null);
         setDecoded(await api<Decoded>('/api/payments/decode', { invoice: sendInvoice }));
       })}>Decodifica</button>
@@ -117,9 +123,57 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
           {compileResult.normalized && <p>Fee max: {compileResult.normalized.maxRoutingFeeMsat ?? 'nessun limite'} msat · Nodi esclusi: {compileResult.normalized.excludedNodeIds.join(', ') || 'nessuno'} · Priorità: {compileResult.normalized.priority} · Privacy: {compileResult.normalized.privacyPreference}</p>}
           {compileResult.issues.map((issue, idx) => <p key={idx} className="error">{issue}</p>)}
         </div>}
+        <div className="row">
+          <button disabled={busy || intent !== null} onClick={() => void action(async () => {
+            const amount = decoded.amountMsat ?? sendAmount;
+            if (!amount) throw new Error('Indicare prima l’importo in msat');
+            const scored = await api<ChannelScoringResult>('/api/routing/score-channels', {
+              invoice: decoded.invoice,
+              amountMsat: amount,
+              assetId: decoded.assetId,
+              assetAmount: decoded.assetAmount,
+              payeePubkey: decoded.payeePubkey,
+              userPreference: constraintText.trim() || undefined,
+              constraints: compileResult?.policy ?? undefined,
+            });
+            setChannelScore(scored);
+            setAlgorithm('multi_objective');
+            setWeights(scored.recommendedWeights);
+            await refresh();
+          })}>Valuta canali con QVAC (RAG + Classifier)</button>
+          <button disabled={busy} onClick={() => void action(async () => {
+            await api('/api/routing/telemetry/seed', {});
+            await refresh();
+          })}>Popola telemetria RAG demo{telemetryStatus ? ` (${telemetryStatus.count})` : ''}</button>
+        </div>
+        {channelScore && <div className="notice">
+          <p><strong>Scoring QVAC ({channelScore.ragBackend}): profilo {channelScore.overallProfile}</strong> · {channelScore.latencyMs} ms{channelScore.vectorStoreId ? ` · store ${channelScore.vectorStoreId}` : ''}</p>
+          <p>{channelScore.summary}</p>
+          <p>Pesi consigliati: fee={channelScore.recommendedWeights.fee}, reliability={channelScore.recommendedWeights.reliability}, cltv={channelScore.recommendedWeights.cltv}, hops={channelScore.recommendedWeights.hops}</p>
+          {channelScore.channels.length > 0 && <ul>
+            {channelScore.channels.map(ch => <li key={ch.channelId}>
+              <strong>[{ch.classification.toUpperCase()} · {ch.score}/100]</strong> {ch.peerAlias ? `${ch.peerAlias} (${ch.channelId})` : ch.channelId}: {ch.reason}
+            </li>)}
+          </ul>}
+          {channelScore.ragHits.length > 0 && <details>
+            <summary>Episodi storici recuperati via QVAC RAG ({channelScore.ragHits.length})</summary>
+            <ul>
+              {channelScore.ragHits.map((hit, idx) => <li key={`${hit.fileId}-${idx}`}>
+                <code>score={hit.score}</code> {hit.text}
+              </li>)}
+            </ul>
+          </details>}
+        </div>}
         <button disabled={busy || (constraintText.trim().length > 0 && compileResult?.status !== 'validated')} onClick={() => void action(async () => {
           const id = crypto.randomUUID();
-          const routing: PaymentRouting = algorithm === 'multi_objective' ? { algorithm, weights } : { algorithm };
+          const routing: PaymentRouting = algorithm === 'multi_objective'
+            ? {
+                algorithm,
+                weights,
+                ...(channelScore?.excludedNodeIds.length ? { excluded_nodes: channelScore.excludedNodeIds } : {}),
+                ...(channelScore?.recommendedRouting.max_paths ? { max_paths: channelScore.recommendedRouting.max_paths } : {}),
+              }
+            : { algorithm };
           const constraints = compileResult?.policy ?? {};
           setIntent(await api<Intent>('/api/payments/prepare', { id, invoice: decoded.invoice, ...(sendAmount ? { amountMsat: sendAmount } : {}), constraints, routing }));
         })}>Prepara</button>

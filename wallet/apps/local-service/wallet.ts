@@ -298,13 +298,47 @@ export class RgbWallet {
     await this.requireAccount().connectPeer(peer);
     return { connected: true };
   }
-  async openChannel(input: { peer: string; capacitySat: string; public?: boolean; assetId?: string; assetAmount?: string }) {
+  async openChannel(input: {
+    peer: string;
+    capacitySat: string;
+    public?: boolean;
+    withAnchors?: boolean;
+    pushMsat?: number | string;
+    pushAssetAmount?: number | string;
+    feeBaseMsat?: number | string;
+    feeProportionalMillionths?: number | string;
+    assetId?: string;
+    assetAmount?: string;
+  }) {
     const match = /^([0-9a-fA-F]{66})@([a-zA-Z0-9.-]+):(\d{1,5})$/.exec(input.peer);
     if (!match || !validNodeId(match[1])) throw new WalletError('INVALID_PEER', 'Peer non valido');
     const capacity = safeNumber(input.capacitySat, 'Capacità canale');
     if (!!input.assetId !== !!input.assetAmount) throw new WalletError('INVALID_ASSET', 'Asset ID e importo richiesti insieme');
-    const request: { peer_pubkey_and_opt_addr: string; capacity_sat: number; push_msat: number; public: boolean; with_anchors: boolean; asset_id?: string; asset_amount?: number } = { peer_pubkey_and_opt_addr: input.peer, capacity_sat: capacity, push_msat: 0, public: input.public ?? false, with_anchors: true };
-    if (input.assetId) { request.asset_id = input.assetId; request.asset_amount = safeNumber(input.assetAmount!, 'Importo asset'); }
+    const nonNeg = (val: number | string, label: string): number => {
+      const n = positiveInteger(val);
+      if (n === null || n > BigInt(Number.MAX_SAFE_INTEGER)) throw new WalletError('INVALID_AMOUNT', `${label} non valido`);
+      return Number(n);
+    };
+    const request: Record<string, unknown> = {
+      peer_pubkey_and_opt_addr: input.peer,
+      capacity_sat: capacity,
+      push_msat: input.pushMsat !== undefined ? nonNeg(input.pushMsat, 'push_msat') : 0,
+      public: input.public ?? false,
+      with_anchors: input.withAnchors ?? true,
+    };
+    if (input.assetId) {
+      request.asset_id = input.assetId;
+      request.asset_amount = safeNumber(input.assetAmount!, 'Importo asset');
+    }
+    if (input.pushAssetAmount !== undefined) {
+      request.push_asset_amount = nonNeg(input.pushAssetAmount, 'push_asset_amount');
+    }
+    if (input.feeBaseMsat !== undefined) {
+      request.fee_base_msat = nonNeg(input.feeBaseMsat, 'fee_base_msat');
+    }
+    if (input.feeProportionalMillionths !== undefined) {
+      request.fee_proportional_millionths = nonNeg(input.feeProportionalMillionths, 'fee_proportional_millionths');
+    }
     return object(await this.requireAccount().openChannel(request));
   }
   async sendLightning(decoded: DecodedLightning, amountMsat: string, routing: PaymentRouting): Promise<Record<string, unknown>> {

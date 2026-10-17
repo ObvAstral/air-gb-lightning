@@ -155,3 +155,39 @@ test('sendLightning inoltra il routing scelto per invoice BTC, RGB e senza impor
     else process.env.ENABLE_REGTEST_SEND = previous;
   }
 });
+
+test('openChannel inoltra i parametri opzionali di fee e push_asset_amount', async () => {
+  const wallet = new RgbWallet(join(tmpdir(), 'airgb-unused-open-channel'));
+  const peer = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798@127.0.0.1:9802';
+  let body: unknown;
+  (wallet as unknown as { account: unknown }).account = {
+    openChannel: async (request: unknown) => {
+      body = request;
+      return { temporary_channel_id: 'temp-01' };
+    },
+  };
+  await wallet.openChannel({
+    peer,
+    capacitySat: '1000000',
+    public: true,
+    withAnchors: true,
+    pushMsat: 0,
+    pushAssetAmount: 0,
+    feeBaseMsat: 1000,
+    feeProportionalMillionths: 0,
+    assetId: 'rgb:test',
+    assetAmount: '60',
+  });
+  assert.deepEqual(body, {
+    peer_pubkey_and_opt_addr: peer,
+    capacity_sat: 1000000,
+    push_msat: 0,
+    public: true,
+    with_anchors: true,
+    asset_id: 'rgb:test',
+    asset_amount: 60,
+    push_asset_amount: 0,
+    fee_base_msat: 1000,
+    fee_proportional_millionths: 0,
+  });
+});

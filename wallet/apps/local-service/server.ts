@@ -8,16 +8,60 @@ import { interpretWithQvac, InterpretationError } from './interpret.js';
 import { RgbWallet, WalletError } from './wallet.js';
 import { RlnError } from './rln.js';
 import sourceLock from '../../infra/native/source-lock.json' with { type: 'json' };
-import { PaymentStore } from './payments.js';
+import { PaymentStore, parseCompiledPolicy, type PaymentRecord } from './payments.js';
 import { VaultError } from './vault.js';
 import { chainHeight, mineBlocks } from './chain.js';
+import { QvacRagStore, scoreChannelsWithQvac, type LiveChannelInput } from './channel-scoring.js';
 
 const port = Number(process.env.PORT ?? 8787);
 const bindHost = process.env.BIND_HOST ?? '127.0.0.1';
 if (bindHost !== '127.0.0.1' && bindHost !== '0.0.0.0') throw new Error('BIND_HOST deve essere 127.0.0.1 oppure 0.0.0.0');
 const token = randomBytes(32).toString('hex');
 const wallet = new RgbWallet();
-const payments = new PaymentStore(wallet.dataDir, wallet);
+const ragStore = new QvacRagStore(wallet.dataDir);
+const recordPaymentEpisode = async (record: PaymentRecord): Promise<void> => {
+  if (record.status !== 'succeeded' && record.status !== 'failed') return;
+  let channels: LiveChannelInput[] = [];
+  let known: { alias: string; pubkey: string }[] = [];
+  let payeePubkey: string | null = null;
+  try {
+    if (wallet.ready) {
+      [channels, known] = await Promise.all([wallet.channels(), resolveKnownNodes()]);
+      const decoded = await wallet.decodeLightning(record.invoice);
+      payeePubkey = decoded.payeePubkey;
+    }
+  } catch {
+    /* Best-effort channel/node enrichment for payment telemetry. */
+  }
+  const matchedChannel =
+    channels.find(ch => payeePubkey && ch.peerNodeId?.toLocaleLowerCase() === payeePubkey.toLocaleLowerCase()) ??
+    channels[0];
+  const peerNodeId = matchedChannel?.peerNodeId ?? payeePubkey ?? null;
+  const peerAlias =
+    (peerNodeId && known.find(n => n.pubkey.toLocaleLowerCase() === peerNodeId.toLocaleLowerCase())?.alias) ?? null;
+  const out = matchedChannel?.outboundMsat ? BigInt(matchedChannel.outboundMsat) : null;
+  const inb = matchedChannel?.inboundMsat ? BigInt(matchedChannel.inboundMsat) : null;
+  const outboundRatioPct = out !== null && inb !== null && out + inb > 0n ? Number((out * 100n) / (out + inb)) : null;
+
+  await ragStore.ingestEpisode({
+    id: `ep-pay-${record.id}`,
+    timestamp: record.updatedAt,
+    eventType: record.status === 'succeeded' ? 'payment_succeeded' : 'payment_failed',
+    peerNodeId,
+    peerAlias,
+    channelId: matchedChannel?.channelId ?? null,
+    amountMsat: record.amountMsat,
+    assetId: record.assetId,
+    assetAmount: record.assetAmount,
+    routingAlgorithm: record.routing.algorithm,
+    outcome: record.status,
+    failureReason: record.status === 'failed' ? 'Payment routing or HTLC settlement failed' : null,
+    outboundRatioPct,
+    feeMsat: record.routing.max_fee_msat ?? null,
+    notes: `Pagamento ${record.status} (${record.amountMsat} msat${record.assetId ? `, RGB ${record.assetId}` : ''}) con algoritmo ${record.routing.algorithm}.`,
+  });
+};
+const payments = new PaymentStore(wallet.dataDir, wallet, recordPaymentEpisode);
 const capabilities: RoutingCapabilities = Object.freeze({
   backendVersion: `ObvAstral/rgb-lightning-node@${sourceLock.node.commit.slice(0, 12)}/rust-lightning@${sourceLock.lightning.commit.slice(0, 12)}`, revision: 'rgb-mpp-1', hardFeeCap: true,
   hardNodeExclusion: true, hardChannelExclusion: false, perPaymentScoringProfile: true,
@@ -96,6 +140,15 @@ const server = createServer(async (req, res) => {
       if (path === '/api/wallet/channels') return json(res, 200, await wallet.channels());
       if (path === '/api/wallet/peers') return json(res, 200, await wallet.peers());
       if (path === '/api/routing/known-nodes') return json(res, 200, await resolveKnownNodes());
+      if (path === '/api/routing/telemetry') {
+        const episodes = ragStore.listEpisodes(30);
+        return json(res, 200, {
+          vectorStoreId: ragStore.getSavedVectorStoreId(),
+          ragBackend: 'qvac-turbovec',
+          count: episodes.length,
+          episodes,
+        });
+      }
       if (path === '/api/wallet/assets') return json(res, 200, await wallet.assets());
       if (path === '/api/wallet/asset-balance') {
         const assetId = new URL(req.url ?? '/', `http://${host}`).searchParams.get('assetId');
@@ -159,7 +212,24 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/wallet/channels/open') {
       if (typeof body.peer !== 'string' || typeof body.capacitySat !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
-      return json(res, 200, await wallet.openChannel({ peer: body.peer, capacitySat: body.capacitySat, public: body.public === true, assetId: typeof body.assetId === 'string' ? body.assetId : undefined, assetAmount: typeof body.assetAmount === 'string' ? body.assetAmount : undefined }));
+      const optNumOrStr = (val: unknown): number | string | undefined =>
+        typeof val === 'number' || typeof val === 'string' ? val : undefined;
+      return json(
+        res,
+        200,
+        await wallet.openChannel({
+          peer: body.peer,
+          capacitySat: body.capacitySat,
+          public: body.public === true,
+          withAnchors: typeof body.withAnchors === 'boolean' ? body.withAnchors : typeof body.with_anchors === 'boolean' ? body.with_anchors : undefined,
+          pushMsat: optNumOrStr(body.pushMsat ?? body.push_msat),
+          pushAssetAmount: optNumOrStr(body.pushAssetAmount ?? body.push_asset_amount),
+          feeBaseMsat: optNumOrStr(body.feeBaseMsat ?? body.fee_base_msat),
+          feeProportionalMillionths: optNumOrStr(body.feeProportionalMillionths ?? body.fee_proportional_millionths),
+          assetId: typeof body.assetId === 'string' ? body.assetId : undefined,
+          assetAmount: typeof body.assetAmount === 'string' ? body.assetAmount : undefined,
+        }),
+      );
     }
     if (path === '/api/payments/decode') {
       if (typeof body.invoice !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
@@ -180,6 +250,52 @@ const server = createServer(async (req, res) => {
     if (path === '/api/constraints/interpret') {
       if (typeof body.text !== 'string') return json(res, 400, { code: 'INVALID_TEXT' });
       return json(res, 200, await interpretWithQvac(body.text));
+    }
+    if (path === '/api/routing/telemetry/seed') {
+      const channels = wallet.ready ? await wallet.channels() : [];
+      const knownNodes = await resolveKnownNodes(body.knownNodes);
+      return json(res, 200, await ragStore.seedDemoEpisodes({ channels, knownNodes }));
+    }
+    if (path === '/api/routing/score-channels') {
+      let amountMsat = typeof body.amountMsat === 'string' ? body.amountMsat : null;
+      let assetId = typeof body.assetId === 'string' ? body.assetId : null;
+      let assetAmount = typeof body.assetAmount === 'string' ? body.assetAmount : null;
+      let payeePubkey = typeof body.payeePubkey === 'string' ? body.payeePubkey : null;
+      if (typeof body.invoice === 'string' && body.invoice.trim() && wallet.ready) {
+        const decoded = await wallet.decodeLightning(body.invoice.trim());
+        amountMsat = decoded.amountMsat ?? amountMsat;
+        assetId = decoded.assetId ?? assetId;
+        assetAmount = decoded.assetAmount ?? assetAmount;
+        payeePubkey = decoded.payeePubkey ?? payeePubkey;
+      }
+      if (!amountMsat || !/^[1-9][0-9]*$/.test(amountMsat)) {
+        return json(res, 422, { code: 'INVALID_AMOUNT', message: 'Importo in msat richiesto per valutare i canali' });
+      }
+      const liveChannels: LiveChannelInput[] = Array.isArray(body.channels)
+        ? (body.channels as LiveChannelInput[])
+        : wallet.ready
+          ? await wallet.channels()
+          : [];
+      const knownNodes = await resolveKnownNodes(body.knownNodes);
+      const compiledPolicy = parseCompiledPolicy(body.constraints);
+      const userPreference = typeof body.userPreference === 'string' ? body.userPreference.slice(0, 500) : null;
+      return json(
+        res,
+        200,
+        await scoreChannelsWithQvac(
+          {
+            amountMsat,
+            assetId,
+            assetAmount,
+            payeePubkey,
+            userPreference,
+            compiledPolicy,
+            channels: liveChannels,
+            knownNodes,
+          },
+          ragStore,
+        ),
+      );
     }
     if (path !== '/api/constraints/compile') return json(res, 404, { code: 'NOT_FOUND' });
     if (!validate(body.extracted)) return json(res, 400, { code: 'INVALID_SCHEMA' });
@@ -208,7 +324,7 @@ const stop = () => {
   void wallet.shutdown().catch(error => {
     console.error('Shutdown RLN non riuscito:', error instanceof Error ? error.message : 'errore sconosciuto');
     process.exitCode = 1;
-  }).finally(() => { payments.close(); server.close(); });
+  }).finally(() => { payments.close(); ragStore.close(); server.close(); });
 };
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);

@@ -31,7 +31,7 @@ const blankConstraints = (value: unknown): boolean => {
   const row = value as Record<string, unknown>;
   return Object.keys(row).length === 0;
 };
-const parseCompiledPolicy = (value: unknown): CompiledPolicy | null => {
+export const parseCompiledPolicy = (value: unknown): CompiledPolicy | null => {
   if (blankConstraints(value)) return null;
   const unsupported = () => new WalletError('CONSTRAINT_UNSUPPORTED', 'Il pagamento vincolato richiede una policy compilata e validata');
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw unsupported();
@@ -66,30 +66,31 @@ const applyPolicyToRouting = (base: PaymentRouting, policy: CompiledPolicy | nul
   if (!policy) return base;
   const patch: RoutingConstraintsPatch = {};
   if (policy.hard.maxRoutingFeeMsat !== null) patch.max_fee_msat = Number(policy.hard.maxRoutingFeeMsat);
-  if (policy.hard.excludedNodeIds.length > 0) patch.excluded_nodes = [...policy.hard.excludedNodeIds];
-  if (policy.soft.privacyPreference === 'avoid_extra_probing') patch.max_paths = 1;
+  const mergedExclusions = [...new Set([...(base.excluded_nodes ?? []), ...policy.hard.excludedNodeIds])];
+  if (mergedExclusions.length > 0) patch.excluded_nodes = mergedExclusions;
+  if (policy.soft.privacyPreference === 'avoid_extra_probing' || base.max_paths === 1) patch.max_paths = 1;
   return { ...base, ...patch };
 };
 const parseRouting = (value: unknown, allowConstraints = false): PaymentRouting => {
   const invalid = () => new WalletError('INVALID_ROUTING', 'Scegliere un algoritmo valido; multi_objective richiede pesi fee, reliability, cltv e hops interi tra 0 e 1000000, almeno uno positivo');
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
   const row = value as Record<string, unknown>;
-  const allowedKeys = allowConstraints ? ['algorithm', 'weights', 'max_fee_msat', 'excluded_nodes', 'max_paths'] : ['algorithm', 'weights'];
+  const allowedKeys = allowConstraints
+    ? ['algorithm', 'weights', 'max_fee_msat', 'excluded_nodes', 'max_paths']
+    : ['algorithm', 'weights', 'excluded_nodes', 'max_paths'];
   if (!ROUTING_ALGORITHMS.some(algorithm => algorithm === row.algorithm) || Object.keys(row).some(key => !allowedKeys.includes(key))) throw invalid();
   const patch: RoutingConstraintsPatch = {};
-  if (allowConstraints) {
-    if (Object.hasOwn(row, 'max_fee_msat')) {
-      if (typeof row.max_fee_msat !== 'number' || !Number.isSafeInteger(row.max_fee_msat) || row.max_fee_msat < 0) throw invalid();
-      patch.max_fee_msat = row.max_fee_msat;
-    }
-    if (Object.hasOwn(row, 'excluded_nodes')) {
-      if (!Array.isArray(row.excluded_nodes) || !row.excluded_nodes.every(id => typeof id === 'string' && validNodeId(id))) throw invalid();
-      patch.excluded_nodes = row.excluded_nodes.map(id => id.toLowerCase());
-    }
-    if (Object.hasOwn(row, 'max_paths')) {
-      if (typeof row.max_paths !== 'number' || !Number.isInteger(row.max_paths) || row.max_paths < 1 || row.max_paths > 32) throw invalid();
-      patch.max_paths = row.max_paths;
-    }
+  if (allowConstraints && Object.hasOwn(row, 'max_fee_msat')) {
+    if (typeof row.max_fee_msat !== 'number' || !Number.isSafeInteger(row.max_fee_msat) || row.max_fee_msat < 0) throw invalid();
+    patch.max_fee_msat = row.max_fee_msat;
+  }
+  if (Object.hasOwn(row, 'excluded_nodes')) {
+    if (!Array.isArray(row.excluded_nodes) || !row.excluded_nodes.every(id => typeof id === 'string' && validNodeId(id))) throw invalid();
+    patch.excluded_nodes = row.excluded_nodes.map(id => id.toLowerCase());
+  }
+  if (Object.hasOwn(row, 'max_paths')) {
+    if (typeof row.max_paths !== 'number' || !Number.isInteger(row.max_paths) || row.max_paths < 1 || row.max_paths > 32) throw invalid();
+    patch.max_paths = row.max_paths;
   }
   if (row.algorithm !== 'multi_objective') {
     if (Object.hasOwn(row, 'weights')) throw invalid();
@@ -104,7 +105,11 @@ const parseRouting = (value: unknown, allowConstraints = false): PaymentRouting 
 
 export class PaymentStore {
   private db: DatabaseSync;
-  constructor(directory: string, private wallet: WalletPort) {
+  constructor(
+    directory: string,
+    private wallet: WalletPort,
+    private onTerminalOutcome?: (record: PaymentRecord) => void | Promise<void>,
+  ) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(directory, 'payments.sqlite'));
     this.db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS intents (id TEXT PRIMARY KEY, payment_hash TEXT UNIQUE NOT NULL, invoice TEXT NOT NULL, amount_msat TEXT NOT NULL, asset_id TEXT, asset_amount TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, native_payment_id TEXT)');
@@ -153,7 +158,9 @@ export class PaymentStore {
     if (policy) {
       const expectedFingerprint = fingerprint({ invoice: decoded.invoice, amount, assetId: decoded.assetId ?? 'BTC', network: decoded.network });
       if (policy.paymentFingerprint !== expectedFingerprint) throw new WalletError('CONSTRAINT_MISMATCH', 'Policy compilata per un pagamento diverso');
-      if (decoded.payeePubkey && policy.hard.excludedNodeIds.some(id => id.toLowerCase() === decoded.payeePubkey!.toLowerCase())) throw new WalletError('CONSTRAINT_CONFLICT', 'Il destinatario della invoice è tra i nodi esclusi');
+    }
+    if (decoded.payeePubkey && routing.excluded_nodes?.some(id => id.toLowerCase() === decoded.payeePubkey!.toLowerCase())) {
+      throw new WalletError('CONSTRAINT_CONFLICT', 'Il destinatario della invoice è tra i nodi esclusi');
     }
     const now = Date.now();
     try {
@@ -176,6 +183,11 @@ export class PaymentStore {
       const status = normalizeStatus(native.status);
       const nativeId = typeof native.payment_id === 'string' ? native.payment_id : null;
       this.db.prepare('UPDATE intents SET status=?,native_payment_id=?,updated_at=? WHERE id=?').run(status, nativeId, Date.now(), id);
+      const updatedRecord = this.row(id)!;
+      if ((status === 'succeeded' || status === 'failed') && this.onTerminalOutcome) {
+        void Promise.resolve(this.onTerminalOutcome(updatedRecord)).catch(() => undefined);
+      }
+      return updatedRecord;
     } catch {
       // The native operation may still complete after a transport error.
     }
@@ -188,7 +200,14 @@ export class PaymentStore {
     try {
       const native = await this.wallet.paymentStatus(record.paymentHash);
       const status = normalizeStatus(native.status);
-      if (status !== 'unknown') this.db.prepare('UPDATE intents SET status=?,updated_at=? WHERE id=?').run(status, Date.now(), id);
+      if (status !== 'unknown') {
+        this.db.prepare('UPDATE intents SET status=?,updated_at=? WHERE id=?').run(status, Date.now(), id);
+        const updatedRecord = this.row(id)!;
+        if ((status === 'succeeded' || status === 'failed') && this.onTerminalOutcome) {
+          void Promise.resolve(this.onTerminalOutcome(updatedRecord)).catch(() => undefined);
+        }
+        return updatedRecord;
+      }
     } catch { /* Keep unknown until the node is queryable. */ }
     return this.row(id)!;
   }

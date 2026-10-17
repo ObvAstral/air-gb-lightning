@@ -13,7 +13,7 @@
     "dev:ui": "npm run dev -w @airgb/web",
     "build": "npm run build -w @airgb/web",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import tsx --test packages/policy/*.test.ts apps/local-service/*.test.ts",
+    "test": "node --import tsx --test packages/policy/*.test.ts apps/local-service/*.test.ts tests/*.test.ts",
     "test:rgb": "node infra/regtest/run-rgb.mjs",
     "test:mpp": "npm run native:build && node --env-file=native-data/regtest/wallet.env --import tsx infra/regtest/e2e-mpp.mjs",
     "cli": "node --env-file=native-data/regtest/wallet.env --import tsx infra/regtest/cli.mjs",
@@ -21,7 +21,8 @@
     "qvac:doctor": "qvac doctor",
     "qvac:precache": "node scripts/qvac-precache.mjs",
     "qvac:serve": "qvac serve --openai --port 11434 -c qvac.config.json",
-    "qvac:smoke": "node --import tsx scripts/qvac-smoke-test.mjs"
+    "qvac:smoke": "node --import tsx scripts/qvac-smoke-test.mjs",
+    "qvac:smoke:scoring": "node --import tsx infra/regtest/smoke-qvac-scoring.mjs"
   },
   "devDependencies": {
     "@types/node": "24.5.2",

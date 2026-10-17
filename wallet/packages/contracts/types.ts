@@ -50,3 +50,86 @@ export type CompileResult = {
   normalized: { maxRoutingFeeMsat: string | null; excludedNodeIds: string[]; priority: Priority; privacyPreference: 'standard' | 'avoid_extra_probing' } | null;
   policy: CompiledPolicy | null;
 };
+
+export type ChannelClassification =
+  | 'optimal'
+  | 'good'
+  | 'congested'
+  | 'insufficient_liquidity'
+  | 'unreliable'
+  | 'avoid';
+
+export type ChannelScoreProfile =
+  | 'balanced'
+  | 'fee_saver'
+  | 'high_reliability'
+  | 'liquidity_preserving'
+  | 'single_path_privacy';
+
+export type ChannelScoreEntry = {
+  channelId: string;
+  peerNodeId: string;
+  peerAlias?: string | null;
+  classification: ChannelClassification;
+  score: number;
+  reason: string;
+  outboundMsat?: string | null;
+  inboundMsat?: string | null;
+  assetId?: string | null;
+  assetLocalAmount?: string | null;
+  isUsable?: boolean | null;
+};
+
+export type RagTelemetryHit = {
+  fileId: string;
+  filename: string;
+  score: number;
+  text: string;
+};
+
+export type TelemetryEpisode = {
+  id: string;
+  timestamp: number;
+  eventType: 'payment_succeeded' | 'payment_failed' | 'channel_anomaly' | 'liquidity_probe';
+  peerNodeId: string | null;
+  peerAlias: string | null;
+  channelId: string | null;
+  amountMsat: string;
+  assetId: string | null;
+  assetAmount: string | null;
+  routingAlgorithm: string;
+  outcome: 'succeeded' | 'failed' | 'degraded';
+  failureReason: string | null;
+  outboundRatioPct: number | null;
+  feeMsat: number | null;
+  notes: string;
+};
+
+export type ChannelClassifierOutput = {
+  schemaVersion: '1.0';
+  overallProfile: ChannelScoreProfile;
+  recommendedWeights: ObjectiveWeights;
+  channels: {
+    channelId: string;
+    peerNodeId: string;
+    classification: ChannelClassification;
+    score: number;
+    reason: string;
+  }[];
+  summary: string;
+};
+
+export type ChannelScoringResult = {
+  schemaVersion: '1.0';
+  vectorStoreId: string | null;
+  ragBackend: 'qvac-turbovec';
+  overallProfile: ChannelScoreProfile;
+  recommendedWeights: ObjectiveWeights;
+  recommendedRouting: PaymentRouting;
+  excludedNodeIds: string[];
+  channels: ChannelScoreEntry[];
+  ragHits: RagTelemetryHit[];
+  summary: string;
+  latencyMs: number;
+};
+

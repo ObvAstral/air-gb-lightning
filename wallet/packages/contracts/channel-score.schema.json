@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ChannelScoringClassifier",
+  "description": "Classificazione strutturata dei canali Lightning/RGB e raccomandazione dei pesi di routing multi_objective basata su telemetria live e storico RAG.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "overallProfile",
+    "recommendedWeights",
+    "channels",
+    "summary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "overallProfile": {
+      "enum": [
+        "balanced",
+        "fee_saver",
+        "high_reliability",
+        "liquidity_preserving",
+        "single_path_privacy"
+      ]
+    },
+    "recommendedWeights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fee", "reliability", "cltv", "hops"],
+      "properties": {
+        "fee": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "reliability": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "cltv": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "hops": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channelId",
+          "peerNodeId",
+          "classification",
+          "score",
+          "reason"
+        ],
+        "properties": {
+          "channelId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "peerNodeId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "classification": {
+            "enum": [
+              "optimal",
+              "good",
+              "congested",
+              "insufficient_liquidity",
+              "unreliable",
+              "avoid"
+            ]
+          },
+          "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      }
+    },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 160 }
+  }
+}

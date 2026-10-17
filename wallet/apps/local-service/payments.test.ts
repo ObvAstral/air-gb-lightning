@@ -160,6 +160,19 @@ test('CompiledPolicy validata applica max_fee_msat, excluded_nodes e max_paths a
       excluded_nodes: [bobPubkey],
       max_paths: 1,
     });
+
+    decoded.paymentHash = 'd'.repeat(64);
+    decoded.invoice = 'lnbcrt-policy-mpp';
+    const mppPrepared = await store.prepare({
+      id: 'policy-intent-02',
+      invoice: decoded.invoice,
+      routing: { algorithm: 'min_cost_flow', max_paths: 2, excluded_nodes: [bobPubkey] },
+    });
+    assert.deepEqual(mppPrepared.routing, {
+      algorithm: 'min_cost_flow',
+      max_paths: 2,
+      excluded_nodes: [bobPubkey],
+    });
   } finally {
     store.close();
     await rm(dir, { recursive: true, force: true });

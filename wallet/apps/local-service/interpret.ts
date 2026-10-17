@@ -79,6 +79,10 @@ function sanitizeQvacRaw(raw: unknown, text: string): unknown {
     obj.status = 'needs_clarification';
     obj.excludedNodeReferences = [];
   } else {
+    const preserveTextCasing = (ref: string): string => {
+      const idx = normalizedText.indexOf(ref.toLocaleLowerCase());
+      return idx >= 0 ? text.slice(idx, idx + ref.length) : ref;
+    };
     const existingRefs = Array.isArray(obj.excludedNodeReferences)
       ? obj.excludedNodeReferences.filter(
           (r): r is string =>
@@ -88,14 +92,20 @@ function sanitizeQvacRaw(raw: unknown, text: string): unknown {
         )
       : [];
     const nodeMatch = /(?:evita|non\s+passare\s+da|avoid)\s+([a-z0-9_]+)(?:\s+(?:e|and)\s+([a-z0-9_]+))?/i.exec(text);
-    if (existingRefs.length === 0 && nodeMatch) {
-      const extractedRefs = [nodeMatch[1], nodeMatch[2]].filter(
-        (r): r is string => Boolean(r) && !/^(?:probing|questo|this|di|il|lo|la)$/i.test(r),
-      );
-      obj.excludedNodeReferences = [...new Set(extractedRefs)];
-    } else {
-      obj.excludedNodeReferences = [...new Set(existingRefs)];
+    const regexRefs = nodeMatch
+      ? [nodeMatch[1], nodeMatch[2]].filter(
+          (r): r is string =>
+            Boolean(r) && !/^(?:probing|questo|this|di|il|lo|la|commissioni|fee|sat|msat)$/i.test(r),
+        )
+      : [];
+    const combined = regexRefs.length >= existingRefs.length && regexRefs.length > 0 ? regexRefs : existingRefs;
+    const deduped = new Map<string, string>();
+    for (const ref of combined) {
+      const cased = preserveTextCasing(ref);
+      const key = cased.toLocaleLowerCase();
+      if (!deduped.has(key)) deduped.set(key, cased);
     }
+    obj.excludedNodeReferences = [...deduped.values()];
   }
 
   // 6. Unsupported guarantees & status finalization
