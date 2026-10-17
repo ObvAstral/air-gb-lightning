@@ -180,6 +180,49 @@ export class RgbWallet {
   async peers() {
     return records(await this.requireAccount().listPeers(), 'peers').map(row => ({ nodeId: stringField(row, 'pubkey') ?? stringField(row, 'node_id'), connected: typeof row.is_connected === 'boolean' ? row.is_connected : null }));
   }
+  async knownNodes(): Promise<{ alias: string; pubkey: string }[]> {
+    const map = new Map<string, { alias: string; pubkey: string }>();
+    const add = (alias: string | null | undefined, pubkey: string | null | undefined) => {
+      const cleanAlias = alias?.trim();
+      const cleanPubkey = pubkey?.trim().toLowerCase();
+      if (!cleanAlias || !cleanPubkey || !validNodeId(cleanPubkey)) return;
+      map.set(cleanAlias.toLocaleLowerCase(), { alias: cleanAlias, pubkey: cleanPubkey });
+    };
+    const rawEnv = process.env.AIRGB_KNOWN_NODES?.trim();
+    if (rawEnv) {
+      try {
+        const parsed = JSON.parse(rawEnv) as unknown;
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            const row = object(item);
+            add(stringField(row, 'alias'), stringField(row, 'pubkey'));
+          }
+        }
+      } catch {
+        for (const entry of rawEnv.split(',')) {
+          const [alias, pubkey] = entry.split('=');
+          add(alias, pubkey);
+        }
+      }
+    }
+    if (this.ready) {
+      try {
+        const [summary, peers, channels] = await Promise.all([this.summary(), this.peers(), this.channels()]);
+        const selfAlias = this.listeningPort === 9736 ? 'Bob' : 'Alice';
+        const peerAlias = selfAlias === 'Alice' ? 'Bob' : 'Alice';
+        add(selfAlias, summary.nodeId);
+        const peerPubkeys = new Set<string>();
+        for (const peer of peers) if (peer.nodeId && peer.nodeId.toLowerCase() !== summary.nodeId.toLowerCase()) peerPubkeys.add(peer.nodeId);
+        for (const ch of channels) if (ch.peerNodeId && ch.peerNodeId.toLowerCase() !== summary.nodeId.toLowerCase()) peerPubkeys.add(ch.peerNodeId);
+        if (peerPubkeys.size >= 1 && !map.has(peerAlias.toLocaleLowerCase())) {
+          add(peerAlias, [...peerPubkeys][0]);
+        }
+      } catch {
+        /* Ignore node query errors when building best-effort alias map. */
+      }
+    }
+    return [...map.values()];
+  }
   async assets() {
     const source = await this.requireAccount().listAssets();
     const grouped = object(source);

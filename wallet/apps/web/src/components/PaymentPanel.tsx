@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNodeSession } from './node-client.js';
-import { ROUTING_ALGORITHMS, type RoutingAlgorithm, type ObjectiveWeights, type PaymentRouting } from '../../../../packages/contracts/types.js';
+import { ROUTING_ALGORITHMS, type CompileResult, type ExtractedConstraints, type RoutingAlgorithm, type ObjectiveWeights, type PaymentRouting } from '../../../../packages/contracts/types.js';
 
 const RGB_HTLC_MINIMUM_MSAT = '3000000';
 
@@ -26,6 +26,9 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
   const [algorithm, setAlgorithm] = useState<RoutingAlgorithm>('ldk_dijkstra');
   const [weights, setWeights] = useState<ObjectiveWeights>({ fee: 1, reliability: 2, cltv: 1, hops: 10 });
   const [decoded, setDecoded] = useState<Decoded | null>(null);
+  const [constraintText, setConstraintText] = useState('');
+  const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
+  const [qvacLatencyMs, setQvacLatencyMs] = useState<number | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [history, setHistory] = useState<NativePayment[]>([]);
 
@@ -65,15 +68,19 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
       {receivedInvoice && <button disabled={busy} onClick={() => void action(async () => setInvoiceStatus(await api('/api/wallet/receive/lightning/status', { invoice: receivedInvoice })))}>Stato invoice</button>}
       {invoiceStatus !== null && <pre>{JSON.stringify(invoiceStatus, null, 2)}</pre>}
       <h3>Invia</h3>
-      <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setIntent(null); }} /></label>
-      <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setIntent(null); }} inputMode="numeric" /></label>
+      <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setCompileResult(null); setIntent(null); }} /></label>
+      <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setCompileResult(null); setIntent(null); }} inputMode="numeric" /></label>
       <label>Algoritmo di routing<select disabled={busy || intent !== null} value={algorithm} onChange={event => setAlgorithm(event.target.value as RoutingAlgorithm)}>
         {ROUTING_ALGORITHMS.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
       {algorithm === 'multi_objective' && <div className="row">
         {(['fee', 'reliability', 'cltv', 'hops'] as const).map(key => <label key={key}>Peso {key}<input type="number" min="0" max="1000000" step="1" disabled={busy || intent !== null} value={weights[key]} onChange={event => setWeights(previous => ({ ...previous, [key]: Number(event.target.value) }))} /></label>)}
       </div>}
-      <button disabled={busy || !sendInvoice} onClick={() => void action(async () => setDecoded(await api<Decoded>('/api/payments/decode', { invoice: sendInvoice })))}>Decodifica</button>
+      <button disabled={busy || !sendInvoice} onClick={() => void action(async () => {
+        setCompileResult(null);
+        setIntent(null);
+        setDecoded(await api<Decoded>('/api/payments/decode', { invoice: sendInvoice }));
+      })}>Decodifica</button>
       {decoded && <div>
         <dl>
           <dt>Payment hash</dt><dd>{decoded.paymentHash}</dd>
@@ -81,14 +88,44 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
           <dt>Asset</dt><dd>{decoded.assetId ?? 'BTC'} {decoded.assetAmount ?? ''}</dd>
           <dt>Scadenza</dt><dd>{new Date(decoded.expiresAt).toLocaleString()}</dd>
         </dl>
-        <button disabled={busy} onClick={() => void action(async () => {
+        <label>Vincoli in linguaggio naturale (opzionale, via QVAC)
+          <input value={constraintText} disabled={busy || intent !== null} onChange={event => { setConstraintText(event.target.value); setCompileResult(null); }} placeholder="Es. Massimo 10 sat di commissioni, evita Bob" maxLength={1000} />
+        </label>
+        <div className="row">
+          <button disabled={busy || intent !== null || !constraintText.trim()} onClick={() => void action(async () => {
+            const amount = decoded.amountMsat ?? sendAmount;
+            if (!amount) throw new Error('Indicare prima l’importo in msat');
+            const interpreted = await api<{ extracted: ExtractedConstraints; latencyMs: number }>('/api/constraints/interpret', { text: constraintText });
+            setQvacLatencyMs(interpreted.latencyMs);
+            const compiled = await api<CompileResult>('/api/constraints/compile', {
+              extracted: interpreted.extracted,
+              payment: { invoice: decoded.invoice, amount, assetId: decoded.assetId ?? 'BTC', network: 'regtest' },
+            });
+            setCompileResult(compiled);
+            if (compiled.normalized?.priority === 'lowest_fee') {
+              setAlgorithm('multi_objective');
+              setWeights({ fee: 100, reliability: 10, cltv: 1, hops: 5 });
+            } else if (compiled.normalized?.priority === 'reliability') {
+              setAlgorithm('multi_objective');
+              setWeights({ fee: 5, reliability: 100, cltv: 5, hops: 10 });
+            }
+          })}>Interpreta e compila vincoli (QVAC)</button>
+          {compileResult && <button disabled={busy || intent !== null} onClick={() => { setCompileResult(null); setQvacLatencyMs(null); }}>Rimuovi vincoli</button>}
+        </div>
+        {compileResult && <div className="notice">
+          <p><strong>Policy QVAC: {compileResult.code}</strong> ({compileResult.status}){qvacLatencyMs !== null ? ` · ${qvacLatencyMs} ms` : ''}</p>
+          {compileResult.normalized && <p>Fee max: {compileResult.normalized.maxRoutingFeeMsat ?? 'nessun limite'} msat · Nodi esclusi: {compileResult.normalized.excludedNodeIds.join(', ') || 'nessuno'} · Priorità: {compileResult.normalized.priority} · Privacy: {compileResult.normalized.privacyPreference}</p>}
+          {compileResult.issues.map((issue, idx) => <p key={idx} className="error">{issue}</p>)}
+        </div>}
+        <button disabled={busy || (constraintText.trim().length > 0 && compileResult?.status !== 'validated')} onClick={() => void action(async () => {
           const id = crypto.randomUUID();
           const routing: PaymentRouting = algorithm === 'multi_objective' ? { algorithm, weights } : { algorithm };
-          setIntent(await api<Intent>('/api/payments/prepare', { id, invoice: decoded.invoice, ...(sendAmount ? { amountMsat: sendAmount } : {}), constraints: {}, routing }));
+          const constraints = compileResult?.policy ?? {};
+          setIntent(await api<Intent>('/api/payments/prepare', { id, invoice: decoded.invoice, ...(sendAmount ? { amountMsat: sendAmount } : {}), constraints, routing }));
         })}>Prepara</button>
       </div>}
       {intent && <div className="notice">
-        <p>Intento {intent.id}: {intent.status}. {intent.amountMsat} msat{intent.assetId ? ` · ${intent.assetId}` : ''}. Algoritmo: {intent.routing.algorithm}.</p>
+        <p>Intento {intent.id}: {intent.status}. {intent.amountMsat} msat{intent.assetId ? ` · ${intent.assetId}` : ''}. Algoritmo: {intent.routing.algorithm}{intent.routing.max_fee_msat !== undefined ? ` · max fee: ${intent.routing.max_fee_msat} msat` : ''}{intent.routing.excluded_nodes?.length ? ` · esclusi: ${intent.routing.excluded_nodes.length}` : ''}.</p>
         <button disabled={busy || intent.status !== 'prepared' || !state?.sendEnabled} onClick={() => void action(async () => { setIntent(await api<Intent>('/api/payments/confirm', { id: intent.id })); await refresh(); })}>Conferma invio</button>
         <button disabled={busy} onClick={() => void action(async () => setIntent(await api<Intent>(`/api/payments/${intent.id}`)))}>Aggiorna stato</button>
       </div>}

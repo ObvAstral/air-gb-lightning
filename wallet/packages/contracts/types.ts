@@ -3,9 +3,15 @@ export type Priority = 'balanced' | 'lowest_fee' | 'reliability';
 export const ROUTING_ALGORITHMS = ['ldk_dijkstra', 'yen', 'min_cost_flow', 'multi_objective'] as const;
 export type RoutingAlgorithm = typeof ROUTING_ALGORITHMS[number];
 export type ObjectiveWeights = { fee: number; reliability: number; cltv: number; hops: number };
-export type PaymentRouting =
+export type RoutingConstraintsPatch = {
+  max_fee_msat?: number;
+  excluded_nodes?: string[];
+  max_paths?: number;
+};
+export type PaymentRouting = (
   | { algorithm: Exclude<RoutingAlgorithm, 'multi_objective'>; weights?: never }
-  | { algorithm: 'multi_objective'; weights: ObjectiveWeights };
+  | { algorithm: 'multi_objective'; weights: ObjectiveWeights }
+) & RoutingConstraintsPatch;
 export type ExtractedConstraints = {
   schemaVersion: '1.0';
   status: 'parsed' | 'needs_clarification' | 'out_of_scope';

@@ -51,3 +51,37 @@ test('richiesta non gestita impedisce una policy parziale', () => {
   assert.equal(result.code, 'INVALID_EXTRACTION');
   assert.equal(result.policy, null);
 });
+
+test('capabilities abilitate e knownNodes producono una CompiledPolicy validata', () => {
+  const pubkey = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
+  const enabledCaps: RoutingCapabilities = {
+    backendVersion: 'ObvAstral/rgb-lightning-node@7106edd0fa3d/rust-lightning@2f19847fc65a',
+    revision: 'rgb-mpp-1',
+    hardFeeCap: true,
+    hardNodeExclusion: true,
+    hardChannelExclusion: false,
+    perPaymentScoringProfile: true,
+    avoidExtraProbing: true,
+    canInspectFullRoute: true,
+    canGuaranteeConstraintsAcrossRetries: true,
+  };
+  const result = compileConstraints({
+    extracted: {
+      ...base,
+      feeLimit: { value: '2', unit: 'sat', comparison: 'lte' },
+      excludedNodeReferences: ['Bob'],
+      priority: 'reliability',
+      privacyRequest: 'avoid_extra_probing',
+    },
+    payment,
+    capabilities: enabledCaps,
+    knownNodes: [{ alias: 'Bob', pubkey }],
+  });
+  assert.equal(result.status, 'validated');
+  assert.equal(result.code, 'OK');
+  assert.ok(result.policy);
+  assert.equal(result.policy.hard.maxRoutingFeeMsat, '2000');
+  assert.deepEqual(result.policy.hard.excludedNodeIds, [pubkey]);
+  assert.equal(result.policy.soft.priority, 'reliability');
+  assert.equal(result.policy.soft.privacyPreference, 'avoid_extra_probing');
+});

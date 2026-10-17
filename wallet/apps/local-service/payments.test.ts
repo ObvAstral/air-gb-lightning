@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { PaymentStore } from './payments.js';
 import type { DecodedLightning } from './wallet.js';
 import type { PaymentRouting } from '../../packages/contracts/types.js';
+import { compileConstraints } from '../../packages/policy/compile.js';
 
 test('un intento persistente impedisce doppi invii e resta unknown dopo timeout', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'airgb-payments-'));
@@ -96,4 +97,71 @@ test('la migrazione conserva gli intenti precedenti con ldk_dijkstra', async () 
     assert.equal((await store.confirm('legacy-0001')).status, 'pending');
     assert.deepEqual(sent, { algorithm: 'ldk_dijkstra' });
   } finally { store.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('CompiledPolicy validata applica max_fee_msat, excluded_nodes e max_paths al routing inviato a RLN', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'airgb-policy-routing-'));
+  const bobPubkey = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
+  const decoded: DecodedLightning = { invoice: 'lnbcrt-policy', network: 'regtest', paymentHash: 'c'.repeat(64), payeePubkey: null, amountMsat: '5000000', assetId: null, assetAmount: null, expiresAt: Date.now() + 60000, description: null };
+  let sentRouting: PaymentRouting | null = null;
+  const wallet = {
+    canSend: true,
+    decodeLightning: async () => decoded,
+    sendLightning: async (_decoded: DecodedLightning, _amount: string, routing: PaymentRouting) => {
+      sentRouting = routing;
+      return { status: 'Succeeded', payment_id: 'pid-01' };
+    },
+    paymentStatus: async () => ({ status: 'Succeeded' }),
+  };
+  const compiled = compileConstraints({
+    extracted: {
+      schemaVersion: '1.0',
+      status: 'parsed',
+      feeLimit: { value: '10', unit: 'sat', comparison: 'lte' },
+      excludedNodeReferences: ['Bob'],
+      priority: 'reliability',
+      privacyRequest: 'avoid_extra_probing',
+      unhandledRequests: [],
+    },
+    payment: { invoice: decoded.invoice, amount: decoded.amountMsat!, assetId: 'BTC', network: 'regtest' },
+    capabilities: {
+      backendVersion: 'ObvAstral/rgb-lightning-node@7106edd0fa3d',
+      revision: 'rgb-mpp-1',
+      hardFeeCap: true,
+      hardNodeExclusion: true,
+      hardChannelExclusion: false,
+      perPaymentScoringProfile: true,
+      avoidExtraProbing: true,
+      canInspectFullRoute: true,
+      canGuaranteeConstraintsAcrossRetries: true,
+    },
+    knownNodes: [{ alias: 'Bob', pubkey: bobPubkey }],
+  });
+  assert.equal(compiled.status, 'validated');
+  const store = new PaymentStore(dir, wallet);
+  try {
+    const prepared = await store.prepare({
+      id: 'policy-intent-01',
+      invoice: decoded.invoice,
+      constraints: compiled.policy,
+      routing: { algorithm: 'yen' },
+    });
+    assert.deepEqual(prepared.routing, {
+      algorithm: 'yen',
+      max_fee_msat: 10000,
+      excluded_nodes: [bobPubkey],
+      max_paths: 1,
+    });
+    const confirmed = await store.confirm(prepared.id);
+    assert.equal(confirmed.status, 'succeeded');
+    assert.deepEqual(sentRouting, {
+      algorithm: 'yen',
+      max_fee_msat: 10000,
+      excluded_nodes: [bobPubkey],
+      max_paths: 1,
+    });
+  } finally {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

@@ -57,7 +57,7 @@ function App() {
     </section>
     {error && <aside role="alert" className="error">{error}</aside>}
     {result && <section className="result"><h2>Anteprima</h2><p><strong>{result.code}</strong> · {result.status}</p>{result.normalized && <dl><dt>Budget massimo</dt><dd>{result.normalized.maxRoutingFeeMsat ?? 'nessuno'} msat</dd><dt>Nodi esclusi</dt><dd>{result.normalized.excludedNodeIds.join(', ') || 'nessuno'}</dd><dt>Priorità</dt><dd>{result.normalized.priority}</dd><dt>Privacy</dt><dd>{result.normalized.privacyPreference}</dd></dl>}{result.issues.map((issue, i) => <p className="notice" key={i}>{issue}</p>)}<p>Invio disabilitato: nessun pagamento può partire da questa anteprima.</p></section>}
-    <footer>Interpretazione e validazione in sviluppo; enforcement reale da integrare.</footer>
+    <footer>Interpretazione QVAC, compilazione deterministica e enforcement routing RLN attivi.</footer>
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

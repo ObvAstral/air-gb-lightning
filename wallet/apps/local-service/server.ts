@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import Ajv from 'ajv';
 import schema from '../../packages/contracts/extracted.schema.json' with { type: 'json' };
 import type { ExtractedConstraints, PaymentDraft, RoutingCapabilities } from '../../packages/contracts/types.js';
-import { compileConstraints } from '../../packages/policy/compile.js';
+import { compileConstraints, validNodeId } from '../../packages/policy/compile.js';
 import { interpretWithQvac, InterpretationError } from './interpret.js';
 import { RgbWallet, WalletError } from './wallet.js';
 import { RlnError } from './rln.js';
@@ -19,10 +19,49 @@ const token = randomBytes(32).toString('hex');
 const wallet = new RgbWallet();
 const payments = new PaymentStore(wallet.dataDir, wallet);
 const capabilities: RoutingCapabilities = Object.freeze({
-  backendVersion: `ObvAstral/rgb-lightning-node@${sourceLock.node.commit.slice(0, 12)}/rust-lightning@${sourceLock.lightning.commit.slice(0, 12)}`, revision: 'rgb-mpp-1', hardFeeCap: false,
-  hardNodeExclusion: false, hardChannelExclusion: false, perPaymentScoringProfile: false,
-  avoidExtraProbing: false, canInspectFullRoute: false, canGuaranteeConstraintsAcrossRetries: false,
+  backendVersion: `ObvAstral/rgb-lightning-node@${sourceLock.node.commit.slice(0, 12)}/rust-lightning@${sourceLock.lightning.commit.slice(0, 12)}`, revision: 'rgb-mpp-1', hardFeeCap: true,
+  hardNodeExclusion: true, hardChannelExclusion: false, perPaymentScoringProfile: true,
+  avoidExtraProbing: true, canInspectFullRoute: true, canGuaranteeConstraintsAcrossRetries: true,
 });
+const resolveKnownNodes = async (custom?: unknown): Promise<{ alias: string; pubkey: string }[]> => {
+  const map = new Map<string, { alias: string; pubkey: string }>();
+  const add = (alias: unknown, pubkey: unknown) => {
+    if (typeof alias !== 'string' || typeof pubkey !== 'string') return;
+    const cleanAlias = alias.trim();
+    const cleanPubkey = pubkey.trim().toLowerCase();
+    if (!cleanAlias || !validNodeId(cleanPubkey)) return;
+    map.set(cleanAlias.toLocaleLowerCase(), { alias: cleanAlias, pubkey: cleanPubkey });
+  };
+  for (const item of await wallet.knownNodes()) add(item.alias, item.pubkey);
+  for (const peer of [{ alias: 'Alice', port: 8787 }, { alias: 'Bob', port: 8788 }]) {
+    if (peer.port === port || map.has(peer.alias.toLocaleLowerCase())) continue;
+    try {
+      const baseUrl = `http://127.0.0.1:${peer.port}`;
+      const sessionRes = await fetch(`${baseUrl}/api/session`, { signal: AbortSignal.timeout(400) });
+      if (!sessionRes.ok) continue;
+      const { token: peerToken } = await sessionRes.json() as { token?: string };
+      if (!peerToken) continue;
+      const summaryRes = await fetch(`${baseUrl}/api/wallet/summary`, {
+        headers: { 'x-session-token': peerToken },
+        signal: AbortSignal.timeout(400),
+      });
+      if (!summaryRes.ok) continue;
+      const summary = await summaryRes.json() as { nodeId?: string };
+      add(peer.alias, summary.nodeId);
+    } catch {
+      /* Ignore offline or locked peer service. */
+    }
+  }
+  if (Array.isArray(custom)) {
+    for (const item of custom) {
+      if (item && typeof item === 'object') {
+        const row = item as Record<string, unknown>;
+        add(row.alias, row.pubkey);
+      }
+    }
+  }
+  return [...map.values()];
+};
 const validate = new Ajv({ allErrors: true, strict: true }).compile<ExtractedConstraints>(schema);
 const json = (res: import('node:http').ServerResponse, status: number, data: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
@@ -56,6 +95,7 @@ const server = createServer(async (req, res) => {
       if (path === '/api/wallet/summary') return json(res, 200, await wallet.summary());
       if (path === '/api/wallet/channels') return json(res, 200, await wallet.channels());
       if (path === '/api/wallet/peers') return json(res, 200, await wallet.peers());
+      if (path === '/api/routing/known-nodes') return json(res, 200, await resolveKnownNodes());
       if (path === '/api/wallet/assets') return json(res, 200, await wallet.assets());
       if (path === '/api/wallet/asset-balance') {
         const assetId = new URL(req.url ?? '/', `http://${host}`).searchParams.get('assetId');
@@ -151,7 +191,8 @@ const server = createServer(async (req, res) => {
     if (decoded.amountMsat !== null && decoded.amountMsat !== amount) return json(res, 422, { code: 'AMOUNT_MISMATCH', message: 'Importo diverso dalla invoice' });
     if ((decoded.assetId ?? 'BTC') !== payment.assetId) return json(res, 422, { code: 'ASSET_MISMATCH', message: 'Asset diverso dalla invoice' });
     const canonical: PaymentDraft = { invoice: decoded.invoice, amount, assetId: decoded.assetId ?? 'BTC', network: decoded.network };
-    return json(res, 200, compileConstraints({ extracted: body.extracted, payment: canonical, capabilities, payeePubkey: decoded.payeePubkey }));
+    const knownNodes = await resolveKnownNodes(body.knownNodes);
+    return json(res, 200, compileConstraints({ extracted: body.extracted, payment: canonical, capabilities, knownNodes, payeePubkey: decoded.payeePubkey }));
   } catch (error) {
     if (error instanceof WalletError || error instanceof VaultError || error instanceof RlnError) return json(res, 422, { code: error.code, message: error.message });
     if (error instanceof InterpretationError) return json(res, 422, { code: error.code, message: error.message });
