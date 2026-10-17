@@ -133,3 +133,67 @@ export type ChannelScoringResult = {
   latencyMs: number;
 };
 
+export type AlgorithmSelectionReasonCode =
+  | 'small_fast_single_path'
+  | 'alternative_paths_exploration'
+  | 'mpp_liquidity_split'
+  | 'multi_objective_tradeoff'
+  | 'privacy_single_path'
+  | 'rgb_asset_conservation';
+
+export type EphemeralFeasibilitySummary = {
+  singlePathPossible: boolean;
+  mppPossible: boolean;
+  recommendedMaxPaths: number;
+  usableChannelCount: number;
+  singlePathHealthyChannelCount: number;
+  ephemeralRamWiped: true;
+};
+
+export type AlgorithmSelectorClassifierOutput = {
+  schemaVersion: '1.0';
+  selectedAlgorithm: RoutingAlgorithm;
+  reasonCode: AlgorithmSelectionReasonCode;
+  recommendedMaxPaths: number;
+  recommendedWeights: ObjectiveWeights;
+  rationale: string;
+};
+
+export type AlgorithmSelectionResult = {
+  schemaVersion: '1.0';
+  selectedAlgorithm: RoutingAlgorithm;
+  reasonCode: AlgorithmSelectionReasonCode;
+  rationale: string;
+  recommendedRouting: PaymentRouting;
+  recommendedWeights: ObjectiveWeights;
+  feasibility: EphemeralFeasibilitySummary;
+  channelScoring: ChannelScoringResult;
+  latencyMs: number;
+};
+
+export type SyntheticHistoryLevel = 20 | 100 | 500 | 2000;
+
+export type FixtureLoadResult = {
+  datasetId: string;
+  level: SyntheticHistoryLevel;
+  nodeId: string;
+  loadedSqliteCount: number;
+  ingestedRagCount: number;
+  vectorStoreId: string | null;
+  channels: {
+    channelId: string | null;
+    peerNodeId: string | null;
+    assetId: string | null;
+    capacitySat: string | null;
+    outboundMsat: string | null;
+    inboundMsat: string | null;
+    assetLocalAmount: string | null;
+    assetRemoteAmount: string | null;
+    isUsable: boolean | null;
+    public?: boolean | null;
+  }[];
+  knownNodes: { alias: string; pubkey: string }[];
+  privacyCheck: 'first_party_node_scoped_only';
+};
+
+

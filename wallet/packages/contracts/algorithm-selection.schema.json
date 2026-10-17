@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RoutingAlgorithmSelector",
+  "description": "Scelta dinamica dell'algoritmo di routing Lightning/RGB (ldk_dijkstra, yen, min_cost_flow, multi_objective) e del numero di percorsi MPP in base a dimensione pagamento, asset, storico RAG e vincoli.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "selectedAlgorithm",
+    "reasonCode",
+    "recommendedMaxPaths",
+    "recommendedWeights",
+    "rationale"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "selectedAlgorithm": {
+      "enum": [
+        "ldk_dijkstra",
+        "yen",
+        "min_cost_flow",
+        "multi_objective"
+      ]
+    },
+    "reasonCode": {
+      "enum": [
+        "small_fast_single_path",
+        "alternative_paths_exploration",
+        "mpp_liquidity_split",
+        "multi_objective_tradeoff",
+        "privacy_single_path",
+        "rgb_asset_conservation"
+      ]
+    },
+    "recommendedMaxPaths": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "recommendedWeights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fee", "reliability", "cltv", "hops"],
+      "properties": {
+        "fee": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "reliability": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "cltv": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "hops": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    }
+  }
+}

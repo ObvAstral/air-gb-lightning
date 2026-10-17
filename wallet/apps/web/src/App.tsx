@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AlgorithmSelectionResult,
   ChannelScoringResult,
   CompileResult,
   ExtractedConstraints,
+  FixtureLoadResult,
   ObjectiveWeights,
   PaymentDraft,
   PaymentRouting,
   RoutingAlgorithm,
+  SyntheticHistoryLevel,
 } from '../../../packages/contracts/types.js';
 import {
   CenterWorkspace,
@@ -181,6 +184,10 @@ export function App() {
   const [extracted, setExtracted] = useState<ExtractedConstraints>(INITIAL_EXTRACTED);
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [channelScore, setChannelScore] = useState<ChannelScoringResult | null>(null);
+  const [algorithmSelection, setAlgorithmSelection] = useState<AlgorithmSelectionResult | null>(null);
+  const [fixtureNodeId, setFixtureNodeId] = useState<string>('alice');
+  const [fixtureLevel, setFixtureLevel] = useState<SyntheticHistoryLevel>(100);
+  const [fixtureInfo, setFixtureInfo] = useState<FixtureLoadResult | null>(null);
   const [preparedIntent, setPreparedIntent] = useState<PreparedPaymentIntent | null>(null);
 
   const [chatPrompt, setChatPrompt] = useState('');
@@ -219,6 +226,16 @@ export function App() {
     (id: string) => (id === 'user' ? userSession : id === 'bob' ? bobSession : aliceSession),
     [userSession, aliceSession, bobSession],
   );
+
+  const handleSelectActiveNode = useCallback((nodeId: string) => {
+    const nextId: NodeId = nodeId === 'user' || nodeId === 'bob' ? nodeId : 'alice';
+    setActiveNodeId(nextId);
+    if (nextId === 'user') {
+      setWorkspaceTab('manual');
+    } else if (nextId === 'alice' || nextId === 'bob') {
+      setFixtureNodeId(nextId);
+    }
+  }, []);
 
   // Refresh health via Vite proxy /api/health
   const refreshHealth = useCallback(async () => {
@@ -474,6 +491,7 @@ export function App() {
       invalidateQvacConcurrency();
       setPreparedIntent(null);
       setChannelScore(null);
+      setAlgorithmSelection(null);
       if (patch.invoice !== undefined) {
         setDecodedInvoice(null);
       }
@@ -673,7 +691,49 @@ export function App() {
         }
       }
 
-      const suggested = deriveSuggestedRouting(nextExtracted, compiled);
+      let suggested = deriveSuggestedRouting(nextExtracted, compiled);
+      let suggestedMaxPaths: number | undefined;
+      let suggestedExcludedNodes: string[] | undefined;
+      let algorithmRationale: string | undefined;
+
+      if (!detectedSetup && activeNodeId !== 'user') {
+        try {
+          const selectRes = await fetch(`${activeBaseUrl}/api/routing/select-algorithm`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-session-token': activeSession.token,
+            },
+            body: JSON.stringify({
+              invoice: decoded?.invoice ?? (candidateInvoice || undefined),
+              amountMsat: decoded?.amountMsat ?? (paymentDraft.amount || String(RGB_HTLC_MIN_MSAT)),
+              assetId: decoded?.assetId ?? (paymentDraft.assetId !== 'BTC' ? paymentDraft.assetId : null),
+              assetAmount: decoded?.assetAmount ?? null,
+              payeePubkey: decoded?.payeePubkey ?? null,
+              userPreference: promptText,
+              constraints: compiled?.policy ?? undefined,
+            }),
+            signal: abort.signal,
+          });
+          if (selectRes.ok) {
+            const selected = (await selectRes.json()) as AlgorithmSelectionResult;
+            if (ownRevision === revisionRef.current) {
+              setAlgorithmSelection(selected);
+              setChannelScore(selected.channelScoring);
+              suggested = {
+                algorithm: selected.selectedAlgorithm,
+                weights: selected.recommendedWeights,
+              };
+              suggestedMaxPaths = selected.recommendedRouting.max_paths;
+              suggestedExcludedNodes = selected.recommendedRouting.excluded_nodes;
+              algorithmRationale = selected.rationale;
+            }
+          }
+        } catch {
+          /* Fallback to deriveSuggestedRouting if selector is unavailable */
+        }
+      }
+
       setAlgorithm(suggested.algorithm);
       setWeights(suggested.weights);
 
@@ -682,13 +742,16 @@ export function App() {
         timestamp: Date.now(),
         prompt: promptText,
         nodeId: activeNodeId,
-        nodeLabel: activeNodeId === 'alice' ? 'Alice (:8787)' : 'Bob (:8788)',
+        nodeLabel: activeNodeId === 'alice' ? 'Alice (:8787)' : activeNodeId === 'bob' ? 'Bob (:8788)' : 'Wallet (:8789)',
         actionType: detectedSetup ? 'setup' : 'payment',
         latencyMs: latency,
         extracted: nextExtracted,
         compileResult: compiled,
         suggestedAlgorithm: suggested.algorithm,
         suggestedWeights: suggested.weights,
+        suggestedMaxPaths,
+        suggestedExcludedNodes,
+        algorithmRationale,
         paymentDraft: {
           invoice: decoded?.invoice ?? candidateInvoice,
           amount: decoded?.amountMsat ?? (paymentDraft.amount || String(RGB_HTLC_MIN_MSAT)),
@@ -760,10 +823,15 @@ export function App() {
       );
 
       try {
-        const routing: PaymentRouting =
-          card.suggestedAlgorithm === 'multi_objective'
+        const routing: PaymentRouting = {
+          ...(card.suggestedAlgorithm === 'multi_objective'
             ? { algorithm: 'multi_objective', weights: card.suggestedWeights }
-            : { algorithm: card.suggestedAlgorithm };
+            : { algorithm: card.suggestedAlgorithm }),
+          ...(card.suggestedExcludedNodes?.length
+            ? { excluded_nodes: card.suggestedExcludedNodes }
+            : {}),
+          ...(card.suggestedMaxPaths ? { max_paths: card.suggestedMaxPaths } : {}),
+        };
 
         const intent = await session.api<PreparedPaymentIntent>('/api/payments/prepare', {
           id: crypto.randomUUID(),
@@ -909,8 +977,8 @@ export function App() {
     [chatCards, getSessionForNode, refreshNodeSnapshot],
   );
 
-  // Score channels with QVAC RAG
-  const handleScoreChannelsWithQvac = useCallback(
+  // Score channels + Dynamically select routing algorithm with QVAC (Feature 2 + Feature 3)
+  const handleSelectAlgorithmWithQvac = useCallback(
     async (userPreference?: string) => {
       const session = getSessionForNode(activeNodeId);
       setQvacBusy(true);
@@ -918,11 +986,15 @@ export function App() {
       try {
         let dec = decodedInvoice;
         if (!dec && paymentDraft.invoice.trim()) {
-          dec = await handleDecodeInvoice(paymentDraft.invoice.trim());
+          try {
+            dec = await handleDecodeInvoice(paymentDraft.invoice.trim());
+          } catch {
+            dec = null;
+          }
         }
         const amountMsat = dec?.amountMsat ?? (paymentDraft.amount || String(RGB_HTLC_MIN_MSAT));
-        const scored = await session.api<ChannelScoringResult>('/api/routing/score-channels', {
-          invoice: dec?.invoice ?? paymentDraft.invoice,
+        const selected = await session.api<AlgorithmSelectionResult>('/api/routing/select-algorithm', {
+          invoice: dec?.invoice ?? (paymentDraft.invoice.trim() || undefined),
           amountMsat,
           assetId: dec?.assetId ?? (paymentDraft.assetId !== 'BTC' ? paymentDraft.assetId : null),
           assetAmount: dec?.assetAmount ?? null,
@@ -930,9 +1002,10 @@ export function App() {
           userPreference: userPreference ?? (chatPrompt.trim() || undefined),
           constraints: compileResult?.policy ?? undefined,
         });
-        setChannelScore(scored);
-        setAlgorithm('multi_objective');
-        setWeights(scored.recommendedWeights);
+        setAlgorithmSelection(selected);
+        setChannelScore(selected.channelScoring);
+        setAlgorithm(selected.selectedAlgorithm);
+        setWeights(selected.recommendedWeights);
       } catch (err) {
         setQvacError((err as Error).message);
       } finally {
@@ -949,6 +1022,32 @@ export function App() {
       paymentDraft,
     ],
   );
+
+  // Score channels with QVAC RAG (Feature 2 endpoint, also uses dynamic recommendedRouting)
+  const handleScoreChannelsWithQvac = useCallback(
+    async (userPreference?: string) => {
+      await handleSelectAlgorithmWithQvac(userPreference);
+    },
+    [handleSelectAlgorithmWithQvac],
+  );
+
+  const handleLoadFixtureHistory = useCallback(async () => {
+    const session = getSessionForNode(activeNodeId);
+    setQvacBusy(true);
+    setQvacError('');
+    try {
+      const res = await session.api<FixtureLoadResult>('/api/routing/telemetry/load-fixture', {
+        nodeId: fixtureNodeId,
+        level: fixtureLevel,
+        maxRagIngest: 16,
+      });
+      setFixtureInfo(res);
+    } catch (err) {
+      setQvacError((err as Error).message);
+    } finally {
+      setQvacBusy(false);
+    }
+  }, [activeNodeId, fixtureLevel, fixtureNodeId, getSessionForNode]);
 
   const handleSeedTelemetry = useCallback(async () => {
     const session = getSessionForNode(activeNodeId);
@@ -969,19 +1068,20 @@ export function App() {
     if (!dec && paymentDraft.invoice.trim()) {
       dec = await handleDecodeInvoice(paymentDraft.invoice.trim());
     }
-    const routing: PaymentRouting =
-      algorithm === 'multi_objective'
-        ? {
-            algorithm: 'multi_objective',
-            weights,
-            ...(channelScore?.excludedNodeIds.length
-              ? { excluded_nodes: channelScore.excludedNodeIds }
-              : {}),
-            ...(channelScore?.recommendedRouting.max_paths
-              ? { max_paths: channelScore.recommendedRouting.max_paths }
-              : {}),
-          }
-        : { algorithm };
+    const excludedNodes =
+      algorithmSelection?.recommendedRouting.excluded_nodes ??
+      (channelScore?.excludedNodeIds.length ? channelScore.excludedNodeIds : undefined);
+    const maxPaths =
+      algorithmSelection?.recommendedRouting.max_paths ??
+      channelScore?.recommendedRouting.max_paths;
+
+    const routing: PaymentRouting = {
+      ...(algorithm === 'multi_objective'
+        ? { algorithm: 'multi_objective', weights }
+        : { algorithm }),
+      ...(excludedNodes?.length ? { excluded_nodes: excludedNodes } : {}),
+      ...(maxPaths ? { max_paths: maxPaths } : {}),
+    };
 
     const intent = await session.api<PreparedPaymentIntent>('/api/payments/prepare', {
       id: crypto.randomUUID(),
@@ -994,6 +1094,7 @@ export function App() {
   }, [
     activeNodeId,
     algorithm,
+    algorithmSelection,
     channelScore,
     compileResult?.policy,
     decodedInvoice,
@@ -1082,8 +1183,12 @@ export function App() {
 
   // Use generated invoice immediately as payment invoice on the other node
   const handleUseInvoiceForPayment = useCallback(
-    (invoice: string, _targetPayerNodeId?: string) => {
-      setActiveNodeId('user');
+    (invoice: string, targetPayerNodeId?: string) => {
+      if (targetPayerNodeId === 'user' || targetPayerNodeId === 'alice' || targetPayerNodeId === 'bob') {
+        handleSelectActiveNode(targetPayerNodeId);
+      } else if (activeNodeId === 'bob') {
+        handleSelectActiveNode('alice');
+      }
       setPaymentDraft(prev => ({
         ...prev,
         invoice,
@@ -1094,7 +1199,7 @@ export function App() {
       setWorkspaceTab('manual');
       setManualSubTab('send');
     },
-    [],
+    [activeNodeId, handleSelectActiveNode],
   );
 
   // Manual Sub-tab 3: Connect Peer & Open Channel
@@ -1190,6 +1295,10 @@ export function App() {
   const handleApplyPreset = useCallback(
     (preset: DemoPreset) => {
       invalidateQvacConcurrency();
+      if (activeNodeId === 'user') {
+        setActiveNodeId('alice');
+        setFixtureNodeId('alice');
+      }
       setChatPrompt(preset.promptText);
       setExtracted({
         ...INITIAL_EXTRACTED,
@@ -1208,7 +1317,7 @@ export function App() {
         setWorkspaceTab('chat');
       }
     },
-    [invalidateQvacConcurrency],
+    [activeNodeId, invalidateQvacConcurrency],
   );
 
   // Build dynamic array of Regtest nodes for CenterWorkspace and RightNodesInspector
@@ -1269,8 +1378,8 @@ export function App() {
           activeNodePort={activeNodeSnapshot.port}
           activeNodeOffline={activeNodeSnapshot.offline}
           activeNodeState={activeNodeSnapshot.state}
-          onSelectActiveNode={() => setActiveNodeId('user')}
-          availableNodes={[{ id: 'user', label: 'Wallet', port: 8789 }]}
+          onSelectActiveNode={handleSelectActiveNode}
+          availableNodes={nodesList.map(n => ({ id: n.id, label: n.label, port: n.port }))}
           onCreateKeystore={handleCreateKeystore}
           onImportKeystore={handleImportKeystore}
           onUnlockNode={handleUnlockNode}
@@ -1282,8 +1391,8 @@ export function App() {
           nodes={nodesList}
           activeNode={activeNodeSnapshot}
           counterpartyNode={counterpartySnapshot}
-          userWallet
-          onSelectActiveNode={() => setActiveNodeId('user')}
+          userWallet={activeNodeSnapshot.id === 'user'}
+          onSelectActiveNode={handleSelectActiveNode}
           workspaceTab={workspaceTab}
           onChangeWorkspaceTab={setWorkspaceTab}
           manualSubTab={manualSubTab}
@@ -1307,6 +1416,14 @@ export function App() {
           channelScore={channelScore}
           onScoreChannelsWithQvac={handleScoreChannelsWithQvac}
           onSeedTelemetry={handleSeedTelemetry}
+          algorithmSelection={algorithmSelection}
+          onSelectAlgorithmWithQvac={handleSelectAlgorithmWithQvac}
+          fixtureNodeId={fixtureNodeId}
+          onChangeFixtureNodeId={setFixtureNodeId}
+          fixtureLevel={fixtureLevel}
+          onChangeFixtureLevel={setFixtureLevel}
+          fixtureInfo={fixtureInfo}
+          onLoadFixtureHistory={handleLoadFixtureHistory}
           preparedIntent={preparedIntent}
           onPreparePayment={handlePreparePaymentManual}
           onConfirmPayment={handleConfirmPaymentManual}
@@ -1333,7 +1450,7 @@ export function App() {
         <RightNodesInspector
           nodes={nodesList}
           activeNodeId={activeNodeSnapshot.id}
-          onSelectActiveNode={() => setActiveNodeId('user')}
+          onSelectActiveNode={handleSelectActiveNode}
           onSyncNode={handleSyncNode}
           onQuickGenerateBobInvoice={handleQuickGenerateBobInvoice}
           onUseInvoiceForPayment={handleUseInvoiceForPayment}

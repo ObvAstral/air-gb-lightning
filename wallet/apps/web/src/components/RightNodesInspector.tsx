@@ -210,7 +210,7 @@ export function RightNodesInspector({
                 </div>
 
                 <div className="node-header-actions">
-                  {!isActive && node.id === 'user' && (
+                  {!isActive && (
                     <button
                       type="button"
                       className="btn-secondary btn-xs"

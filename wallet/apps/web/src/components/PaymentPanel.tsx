@@ -1,14 +1,33 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNodeSession } from './node-client.js';
-import { ROUTING_ALGORITHMS, type ChannelScoringResult, type CompileResult, type ExtractedConstraints, type RoutingAlgorithm, type ObjectiveWeights, type PaymentRouting } from '../../../../packages/contracts/types.js';
+import {
+  ROUTING_ALGORITHMS,
+  type AlgorithmSelectionResult,
+  type ChannelScoringResult,
+  type CompileResult,
+  type ExtractedConstraints,
+  type FixtureLoadResult,
+  type RoutingAlgorithm,
+  type ObjectiveWeights,
+  type PaymentRouting,
+  type SyntheticHistoryLevel,
+} from '../../../../packages/contracts/types.js';
 
 const RGB_HTLC_MINIMUM_MSAT = '3000000';
+const SYNTHETIC_NODES = ['alice', 'bob', 'carol', 'dave', 'erin', 'frank', 'grace', 'heidi', 'ivan', 'judy'] as const;
+const SYNTHETIC_LEVELS: SyntheticHistoryLevel[] = [20, 100, 500, 2000];
 
 type WalletState = { node: string; sendEnabled: boolean };
 type Decoded = { invoice: string; paymentHash: string; amountMsat: string | null; assetId: string | null; assetAmount: string | null; expiresAt: number; payeePubkey: string | null };
 type Intent = { id: string; paymentHash: string; amountMsat: string; assetId: string | null; status: string; routing: PaymentRouting };
 type NativePayment = { paymentHash: string | null; status: string; amountMsat: string | null; assetId: string | null; assetAmount: string | null };
-type TelemetryStatus = { vectorStoreId: string | null; ragBackend: string; count: number };
+type TelemetryStatus = {
+  vectorStoreId: string | null;
+  ragBackend: string;
+  count: number;
+  totalSqliteCount?: number;
+  activeFixture?: { datasetId: string; level: SyntheticHistoryLevel; nodeId: string; channelCount: number } | null;
+};
 
 type PaymentPanelProps = { label: string; baseUrl: string };
 
@@ -31,6 +50,9 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [qvacLatencyMs, setQvacLatencyMs] = useState<number | null>(null);
   const [channelScore, setChannelScore] = useState<ChannelScoringResult | null>(null);
+  const [algorithmSelection, setAlgorithmSelection] = useState<AlgorithmSelectionResult | null>(null);
+  const [fixtureNodeId, setFixtureNodeId] = useState<string>(label.toLowerCase() === 'bob' ? 'bob' : 'alice');
+  const [fixtureLevel, setFixtureLevel] = useState<SyntheticHistoryLevel>(100);
   const [telemetryStatus, setTelemetryStatus] = useState<TelemetryStatus | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [history, setHistory] = useState<NativePayment[]>([]);
@@ -73,8 +95,8 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
       {receivedInvoice && <button disabled={busy} onClick={() => void action(async () => setInvoiceStatus(await api('/api/wallet/receive/lightning/status', { invoice: receivedInvoice })))}>Stato invoice</button>}
       {invoiceStatus !== null && <pre>{JSON.stringify(invoiceStatus, null, 2)}</pre>}
       <h3>Invia</h3>
-      <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setIntent(null); }} /></label>
-      <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setIntent(null); }} inputMode="numeric" /></label>
+      <label>Invoice Lightning regtest<textarea value={sendInvoice} onChange={event => { setSendInvoice(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setAlgorithmSelection(null); setIntent(null); }} /></label>
+      <label>msat, solo se la invoice non ha importo<input value={sendAmount} onChange={event => { setSendAmount(event.target.value); setDecoded(null); setCompileResult(null); setChannelScore(null); setAlgorithmSelection(null); setIntent(null); }} inputMode="numeric" /></label>
       <label>Algoritmo di routing<select disabled={busy || intent !== null} value={algorithm} onChange={event => setAlgorithm(event.target.value as RoutingAlgorithm)}>
         {ROUTING_ALGORITHMS.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
@@ -84,6 +106,7 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
       <button disabled={busy || !sendInvoice} onClick={() => void action(async () => {
         setCompileResult(null);
         setChannelScore(null);
+        setAlgorithmSelection(null);
         setIntent(null);
         setDecoded(await api<Decoded>('/api/payments/decode', { invoice: sendInvoice }));
       })}>Decodifica</button>
@@ -127,7 +150,7 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
           <button disabled={busy || intent !== null} onClick={() => void action(async () => {
             const amount = decoded.amountMsat ?? sendAmount;
             if (!amount) throw new Error('Indicare prima l’importo in msat');
-            const scored = await api<ChannelScoringResult>('/api/routing/score-channels', {
+            const selected = await api<AlgorithmSelectionResult>('/api/routing/select-algorithm', {
               invoice: decoded.invoice,
               amountMsat: amount,
               assetId: decoded.assetId,
@@ -136,16 +159,45 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
               userPreference: constraintText.trim() || undefined,
               constraints: compileResult?.policy ?? undefined,
             });
-            setChannelScore(scored);
-            setAlgorithm('multi_objective');
-            setWeights(scored.recommendedWeights);
+            setAlgorithmSelection(selected);
+            setChannelScore(selected.channelScoring);
+            setAlgorithm(selected.selectedAlgorithm);
+            setWeights(selected.recommendedWeights);
             await refresh();
-          })}>Valuta canali con QVAC (RAG + Classifier)</button>
+          })}>Scegli algoritmo + valuta canali (QVAC Feature 2+3)</button>
           <button disabled={busy} onClick={() => void action(async () => {
             await api('/api/routing/telemetry/seed', {});
             await refresh();
-          })}>Popola telemetria RAG demo{telemetryStatus ? ` (${telemetryStatus.count})` : ''}</button>
+          })}>Popola telemetria RAG demo{telemetryStatus ? ` (${telemetryStatus.totalSqliteCount ?? telemetryStatus.count})` : ''}</button>
         </div>
+        <div className="row">
+          <label>Nodo fixture
+            <select disabled={busy} value={fixtureNodeId} onChange={e => setFixtureNodeId(e.target.value)}>
+              {SYNTHETIC_NODES.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <label>Storico tx
+            <select disabled={busy} value={fixtureLevel} onChange={e => setFixtureLevel(Number(e.target.value) as SyntheticHistoryLevel)}>
+              {SYNTHETIC_LEVELS.map(lv => <option key={lv} value={lv}>{lv} tx</option>)}
+            </select>
+          </label>
+          <button disabled={busy} onClick={() => void action(async () => {
+            const loaded = await api<FixtureLoadResult>('/api/routing/telemetry/load-fixture', {
+              nodeId: fixtureNodeId,
+              level: fixtureLevel,
+            });
+            setMessage(`Caricato storico first-party per '${loaded.nodeId}' (${loaded.level} tx): ${loaded.loadedSqliteCount} episodi SQLite, ${loaded.ingestedRagCount} indicizzati in QVAC TurboVec.`);
+            await refresh();
+          })}>Carica storico nodo (first-party)</button>
+        </div>
+        {telemetryStatus?.activeFixture && <p className="notice">
+          Fixture attiva: <strong>{telemetryStatus.activeFixture.nodeId}</strong> ({telemetryStatus.activeFixture.datasetId} · {telemetryStatus.activeFixture.channelCount} canali locali · {telemetryStatus.totalSqliteCount ?? telemetryStatus.count} episodi first-party)
+        </p>}
+        {algorithmSelection && <div className="notice">
+          <p><strong>Feature 3 — Algoritmo scelto da QVAC: <code>{algorithmSelection.selectedAlgorithm}</code></strong> ({algorithmSelection.reasonCode}) · max_paths={algorithmSelection.recommendedRouting.max_paths ?? 1} · {algorithmSelection.latencyMs} ms</p>
+          <p>{algorithmSelection.rationale}</p>
+          <p>Fattibilità (RAM effimera rimossa: {algorithmSelection.feasibility.ephemeralRamWiped ? 'sì' : 'no'}): single-path={algorithmSelection.feasibility.singlePathPossible ? 'sì' : 'no'} · MPP={algorithmSelection.feasibility.mppPossible ? 'sì' : 'no'} · canali attivi={algorithmSelection.feasibility.usableChannelCount}</p>
+        </div>}
         {channelScore && <div className="notice">
           <p><strong>Scoring QVAC ({channelScore.ragBackend}): profilo {channelScore.overallProfile}</strong> · {channelScore.latencyMs} ms{channelScore.vectorStoreId ? ` · store ${channelScore.vectorStoreId}` : ''}</p>
           <p>{channelScore.summary}</p>
@@ -166,14 +218,20 @@ export function PaymentPanel({ label, baseUrl }: PaymentPanelProps) {
         </div>}
         <button disabled={busy || (constraintText.trim().length > 0 && compileResult?.status !== 'validated')} onClick={() => void action(async () => {
           const id = crypto.randomUUID();
+          const routingPatch = {
+            ...(channelScore?.excludedNodeIds.length ? { excluded_nodes: channelScore.excludedNodeIds } : {}),
+            ...(channelScore?.recommendedRouting.max_paths ? { max_paths: channelScore.recommendedRouting.max_paths } : {}),
+          };
           const routing: PaymentRouting = algorithm === 'multi_objective'
             ? {
                 algorithm,
                 weights,
-                ...(channelScore?.excludedNodeIds.length ? { excluded_nodes: channelScore.excludedNodeIds } : {}),
-                ...(channelScore?.recommendedRouting.max_paths ? { max_paths: channelScore.recommendedRouting.max_paths } : {}),
+                ...routingPatch,
               }
-            : { algorithm };
+            : {
+                algorithm,
+                ...routingPatch,
+              };
           const constraints = compileResult?.policy ?? {};
           setIntent(await api<Intent>('/api/payments/prepare', { id, invoice: decoded.invoice, ...(sendAmount ? { amountMsat: sendAmount } : {}), constraints, routing }));
         })}>Prepara</button>

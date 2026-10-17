@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import channelScoreSchema from '../../packages/contracts/channel-score.schema.json' with { type: 'json' };
 import type {
@@ -10,13 +12,16 @@ import type {
   ChannelScoreProfile,
   ChannelScoringResult,
   CompiledPolicy,
+  FixtureLoadResult,
   ObjectiveWeights,
   PaymentRouting,
   RagTelemetryHit,
+  SyntheticHistoryLevel,
   TelemetryEpisode,
 } from '../../packages/contracts/types.js';
 import { validNodeId } from '../../packages/policy/compile.js';
 import { InterpretationError } from './interpret.js';
+import { EphemeralRoutingContext, selectRoutingStrategyDeterministic } from './routing-selector.js';
 
 const ajv = new Ajv({ allErrors: true, strict: true });
 const validateClassifier = ajv.compile<ChannelClassifierOutput>(channelScoreSchema);
@@ -79,9 +84,86 @@ function getQvacBaseUrl(): URL {
   return base;
 }
 
+const ALLOWED_FIRST_PARTY_EPISODE_KEYS = new Set([
+  'id',
+  'timestamp',
+  'eventType',
+  'peerNodeId',
+  'peerAlias',
+  'channelId',
+  'amountMsat',
+  'assetId',
+  'assetAmount',
+  'routingAlgorithm',
+  'outcome',
+  'failureReason',
+  'outboundRatioPct',
+  'feeMsat',
+  'notes',
+  'fileId',
+  'vectorStoreId',
+]);
+
+const FORBIDDEN_THIRD_PARTY_OR_SECRET_KEYS = new Set([
+  'remotebalancemsat',
+  'frommsat',
+  'tomsat',
+  'fromassetamount',
+  'toassetamount',
+  'initialchannelstates',
+  'finalchannelstates',
+  'hops',
+  'paths',
+  'sendernodeid',
+  'recipientnodeid',
+  'password',
+  'passphrase',
+  'mnemonic',
+  'seed',
+  'privatekey',
+  'secretkey',
+  'preimage',
+  'invoice',
+  'paymenthash',
+  'txid',
+]);
+
+export function assertFirstPartyEpisode(episode: unknown): asserts episode is TelemetryEpisode {
+  if (!episode || typeof episode !== 'object' || Array.isArray(episode)) {
+    throw new InterpretationError('PRIVACY_VIOLATION', 'Episodio telemetrico non valido');
+  }
+  const obj = episode as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (FORBIDDEN_THIRD_PARTY_OR_SECRET_KEYS.has(key.toLocaleLowerCase())) {
+      throw new InterpretationError(
+        'PRIVACY_VIOLATION',
+        `Vietato salvare dati di terze parti o segreti nello storico (${key})`,
+      );
+    }
+    if (!ALLOWED_FIRST_PARTY_EPISODE_KEYS.has(key)) {
+      throw new InterpretationError(
+        'PRIVACY_VIOLATION',
+        `Campo non consentito nello storico first-party (${key})`,
+      );
+    }
+  }
+  if (typeof obj.notes === 'string' && /\blnbcrt[0-9a-z]+\b/i.test(obj.notes)) {
+    throw new InterpretationError('PRIVACY_VIOLATION', 'Vietato salvare invoice raw nelle note');
+  }
+}
+
+export type ActiveFixtureContext = {
+  datasetId: string;
+  level: SyntheticHistoryLevel;
+  nodeId: string;
+  channels: LiveChannelInput[];
+  knownNodes: { alias: string; pubkey: string }[];
+};
+
 export class QvacRagStore {
   private db: DatabaseSync;
   private verifiedVectorStoreId: string | null = null;
+  private activeFixture: ActiveFixtureContext | null = null;
 
   constructor(directory: string, private vectorStoreName = VECTOR_STORE_NAME) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -114,6 +196,20 @@ export class QvacRagStore {
     `);
   }
 
+  getActiveFixtureContext(): ActiveFixtureContext | null {
+    return this.activeFixture;
+  }
+
+  resetEpisodes(scopeSuffix?: string): void {
+    this.db.exec('DELETE FROM scoring_episodes;');
+    this.db.prepare('DELETE FROM scoring_meta WHERE key = ?').run('vector_store_id');
+    this.verifiedVectorStoreId = null;
+    this.vectorStoreName = scopeSuffix ? `${VECTOR_STORE_NAME}-${scopeSuffix}` : VECTOR_STORE_NAME;
+    if (!scopeSuffix) {
+      this.activeFixture = null;
+    }
+  }
+
   getSavedVectorStoreId(): string | null {
     const row = this.db.prepare('SELECT value FROM scoring_meta WHERE key = ?').get('vector_store_id') as { value?: string } | undefined;
     return row?.value ?? null;
@@ -121,6 +217,11 @@ export class QvacRagStore {
 
   private setSavedVectorStoreId(id: string): void {
     this.db.prepare('INSERT OR REPLACE INTO scoring_meta (key, value) VALUES (?, ?)').run('vector_store_id', id);
+  }
+
+  countEpisodes(): number {
+    const row = this.db.prepare('SELECT COUNT(*) as cnt FROM scoring_episodes').get() as { cnt?: number } | undefined;
+    return Number(row?.cnt ?? 0);
   }
 
   listEpisodes(limit = 50): (TelemetryEpisode & { fileId: string | null; vectorStoreId: string | null })[] {
@@ -147,6 +248,7 @@ export class QvacRagStore {
   }
 
   saveEpisodeLocal(episode: TelemetryEpisode, fileId: string | null = null, vectorStoreId: string | null = null): void {
+    assertFirstPartyEpisode(episode);
     this.db.prepare(`
       INSERT OR REPLACE INTO scoring_episodes (
         id, timestamp, event_type, peer_node_id, peer_alias, channel_id,
@@ -456,6 +558,120 @@ export class QvacRagStore {
       seededCount: demoEpisodes.length,
       vectorStoreId: lastVsId ?? this.getSavedVectorStoreId(),
       episodes: demoEpisodes,
+    };
+  }
+
+  async loadSyntheticNodeHistory(
+    options: {
+      level: SyntheticHistoryLevel;
+      nodeId: string;
+      maxRagIngest?: number;
+      fixtureDir?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<FixtureLoadResult> {
+    const validLevels: SyntheticHistoryLevel[] = [20, 100, 500, 2000];
+    if (!validLevels.includes(options.level)) {
+      throw new InterpretationError('INVALID_FIXTURE_LEVEL', 'Livello fixture non valido: ammessi 20, 100, 500, 2000');
+    }
+    const normalizedNodeId = options.nodeId.trim().toLocaleLowerCase();
+    if (!/^[a-z0-9_-]{2,32}$/.test(normalizedNodeId)) {
+      throw new InterpretationError('INVALID_NODE_ID', 'Identificativo nodo non valido');
+    }
+
+    const baseDir =
+      options.fixtureDir ??
+      resolve(dirname(fileURLToPath(import.meta.url)), '../../tests/fixtures/routing-history');
+    const filename = `history-${String(options.level).padStart(4, '0')}.json`;
+    let rawJson: string;
+    try {
+      rawJson = await readFile(join(baseDir, filename), 'utf8');
+    } catch {
+      throw new InterpretationError('FIXTURE_NOT_FOUND', `File storico sintetico non trovato: ${filename}`);
+    }
+
+    const parsed = JSON.parse(rawJson) as {
+      datasetId?: string;
+      knownNodes?: { alias: string; pubkey: string }[];
+      currentChannelsByNode?: Record<string, LiveChannelInput[]>;
+      nodeHistories?: Record<
+        string,
+        {
+          transactionId: string;
+          pathIndex: number;
+          direction: 'incoming' | 'outgoing';
+          episode: TelemetryEpisode;
+        }[]
+      >;
+    };
+
+    const nodeEntries = parsed.nodeHistories?.[normalizedNodeId];
+    if (!Array.isArray(nodeEntries)) {
+      throw new InterpretationError(
+        'NODE_NOT_IN_FIXTURE',
+        `Il nodo '${normalizedNodeId}' non esiste in ${filename}`,
+      );
+    }
+
+    // Strict First-Party Isolation ("don't hold other people's data"):
+    // Only extract `nodeHistories[normalizedNodeId]` and `currentChannelsByNode[normalizedNodeId]`.
+    // Never retain `parsed.transactions`, `parsed.initialChannelStates`, `parsed.finalChannelStates`, or other nodes' histories.
+    const episodes: TelemetryEpisode[] = nodeEntries.map(entry => {
+      assertFirstPartyEpisode(entry.episode);
+      return structuredClone(entry.episode);
+    });
+    const nodeChannels: LiveChannelInput[] = structuredClone(
+      parsed.currentChannelsByNode?.[normalizedNodeId] ?? [],
+    );
+    const knownNodes: { alias: string; pubkey: string }[] = structuredClone(parsed.knownNodes ?? []);
+    const datasetId = parsed.datasetId ?? `synthetic-routing-history-${String(options.level).padStart(4, '0')}`;
+
+    // Start from an empty store scoped to (nodeId, level) as required by routing-history/README.md
+    this.resetEpisodes(`${normalizedNodeId}-${options.level}`);
+    this.activeFixture = {
+      datasetId,
+      level: options.level,
+      nodeId: normalizedNodeId,
+      channels: nodeChannels,
+      knownNodes,
+    };
+
+    for (const ep of episodes) {
+      this.saveEpisodeLocal(ep, null, null);
+    }
+
+    const maxRag =
+      typeof options.maxRagIngest === 'number' && Number.isFinite(options.maxRagIngest)
+        ? Math.max(0, Math.min(100, Math.trunc(options.maxRagIngest)))
+        : 16;
+
+    // Prioritize failure episodes + algorithm diversity + most recent episodes for QVAC TurboVec indexing
+    const sortedForRag = [...episodes].sort((a, b) => {
+      const aFail = a.outcome === 'failed' ? 1 : 0;
+      const bFail = b.outcome === 'failed' ? 1 : 0;
+      if (aFail !== bFail) return bFail - aFail;
+      return b.timestamp - a.timestamp;
+    });
+    const toIngest = sortedForRag.slice(0, maxRag);
+
+    let ingestedRagCount = 0;
+    let lastVsId: string | null = null;
+    for (const ep of toIngest) {
+      const res = await this.ingestEpisode(ep, signal);
+      if (res.fileId) ingestedRagCount += 1;
+      if (res.vectorStoreId) lastVsId = res.vectorStoreId;
+    }
+
+    return {
+      datasetId,
+      level: options.level,
+      nodeId: normalizedNodeId,
+      loadedSqliteCount: episodes.length,
+      ingestedRagCount,
+      vectorStoreId: lastVsId ?? this.getSavedVectorStoreId(),
+      channels: nodeChannels,
+      knownNodes,
+      privacyCheck: 'first_party_node_scoped_only',
     };
   }
 
@@ -791,17 +1007,26 @@ export function sanitizeAndValidateChannelScore(
   if (payeeLower) excludedSet.delete(payeeLower);
 
   const excludedNodeIds = [...excludedSet];
-  const recommendedRouting: PaymentRouting = {
-    algorithm: 'multi_objective',
-    weights: obj.recommendedWeights,
-    ...(input.compiledPolicy?.hard.maxRoutingFeeMsat
-      ? { max_fee_msat: Number(input.compiledPolicy.hard.maxRoutingFeeMsat) }
-      : {}),
-    ...(excludedNodeIds.length > 0 ? { excluded_nodes: excludedNodeIds } : {}),
-    ...(profile === 'single_path_privacy' || input.compiledPolicy?.soft.privacyPreference === 'avoid_extra_probing'
-      ? { max_paths: 1 }
-      : {}),
-  };
+
+  // Dynamically select routing algorithm + max_paths via EphemeralRoutingContext (wiped in finally)
+  const ephemeral = new EphemeralRoutingContext(input, normalizedChannels, []);
+  let recommendedRouting: PaymentRouting;
+  try {
+    const { summary: feasibility, hasCongestedOrUnreliableHistory } = ephemeral.analyzeFeasibility(input);
+    const decision = selectRoutingStrategyDeterministic({
+      input,
+      overallProfile: obj.overallProfile,
+      recommendedWeights: obj.recommendedWeights,
+      excludedNodeIds,
+      scoredChannels: normalizedChannels,
+      feasibility,
+      hasCongestedOrUnreliableHistory,
+      ragHits,
+    });
+    recommendedRouting = decision.recommendedRouting;
+  } finally {
+    ephemeral.wipe();
+  }
 
   return {
     overallProfile: obj.overallProfile,

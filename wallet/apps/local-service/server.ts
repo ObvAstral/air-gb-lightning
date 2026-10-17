@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import Ajv from 'ajv';
 import schema from '../../packages/contracts/extracted.schema.json' with { type: 'json' };
-import type { ExtractedConstraints, PaymentDraft, RoutingCapabilities } from '../../packages/contracts/types.js';
+import type { ExtractedConstraints, PaymentDraft, RoutingCapabilities, SyntheticHistoryLevel } from '../../packages/contracts/types.js';
 import { compileConstraints, validNodeId } from '../../packages/policy/compile.js';
 import { interpretWithQvac, InterpretationError } from './interpret.js';
 import { RgbWallet, WalletError } from './wallet.js';
@@ -12,6 +12,7 @@ import { PaymentStore, parseCompiledPolicy, type PaymentRecord } from './payment
 import { VaultError } from './vault.js';
 import { chainHeight, mineBlocks } from './chain.js';
 import { QvacRagStore, scoreChannelsWithQvac, type LiveChannelInput } from './channel-scoring.js';
+import { selectRoutingAlgorithmWithQvac } from './routing-selector.js';
 
 const port = Number(process.env.PORT ?? 8787);
 const bindHost = process.env.BIND_HOST ?? '127.0.0.1';
@@ -77,6 +78,10 @@ const resolveKnownNodes = async (custom?: unknown): Promise<{ alias: string; pub
     map.set(cleanAlias.toLocaleLowerCase(), { alias: cleanAlias, pubkey: cleanPubkey });
   };
   for (const item of await wallet.knownNodes()) add(item.alias, item.pubkey);
+  const activeFixture = ragStore.getActiveFixtureContext();
+  if (activeFixture) {
+    for (const item of activeFixture.knownNodes) add(item.alias, item.pubkey);
+  }
   for (const peer of [{ alias: 'Alice', port: 8787 }, { alias: 'Bob', port: 8788 }]) {
     if (peer.port === port || map.has(peer.alias.toLocaleLowerCase())) continue;
     try {
@@ -142,10 +147,20 @@ const server = createServer(async (req, res) => {
       if (path === '/api/routing/known-nodes') return json(res, 200, await resolveKnownNodes());
       if (path === '/api/routing/telemetry') {
         const episodes = ragStore.listEpisodes(30);
+        const activeFixture = ragStore.getActiveFixtureContext();
         return json(res, 200, {
           vectorStoreId: ragStore.getSavedVectorStoreId(),
           ragBackend: 'qvac-turbovec',
           count: episodes.length,
+          totalSqliteCount: ragStore.countEpisodes(),
+          activeFixture: activeFixture
+            ? {
+                datasetId: activeFixture.datasetId,
+                level: activeFixture.level,
+                nodeId: activeFixture.nodeId,
+                channelCount: activeFixture.channels.length,
+              }
+            : null,
           episodes,
         });
       }
@@ -170,7 +185,7 @@ const server = createServer(async (req, res) => {
       return json(res, 404, { code: 'NOT_FOUND' });
     }
     if (req.method !== 'POST') return json(res, 404, { code: 'NOT_FOUND' });
-    for await (const chunk of req) { raw += chunk; if (raw.length > 12000) return json(res, 413, { code: 'TOO_LARGE' }); }
+    for await (const chunk of req) { raw += chunk; if (raw.length > 64000) return json(res, 413, { code: 'TOO_LARGE' }); }
     const body = JSON.parse(raw) as Record<string, unknown>;
     if (!body || typeof body !== 'object' || Array.isArray(body)) return json(res, 400, { code: 'INVALID_JSON_OBJECT' });
     if (path === '/api/wallet/create' || path === '/api/wallet/import') {
@@ -256,7 +271,21 @@ const server = createServer(async (req, res) => {
       const knownNodes = await resolveKnownNodes(body.knownNodes);
       return json(res, 200, await ragStore.seedDemoEpisodes({ channels, knownNodes }));
     }
-    if (path === '/api/routing/score-channels') {
+    if (path === '/api/routing/telemetry/load-fixture') {
+      const level = Number(body.level) as SyntheticHistoryLevel;
+      const nodeId = typeof body.nodeId === 'string' ? body.nodeId : '';
+      const maxRagIngest = typeof body.maxRagIngest === 'number' ? body.maxRagIngest : undefined;
+      return json(
+        res,
+        200,
+        await ragStore.loadSyntheticNodeHistory({
+          level,
+          nodeId,
+          maxRagIngest,
+        }),
+      );
+    }
+    if (path === '/api/routing/score-channels' || path === '/api/routing/select-algorithm') {
       let amountMsat = typeof body.amountMsat === 'string' ? body.amountMsat : null;
       let assetId = typeof body.assetId === 'string' ? body.assetId : null;
       let assetAmount = typeof body.assetAmount === 'string' ? body.assetAmount : null;
@@ -271,31 +300,32 @@ const server = createServer(async (req, res) => {
       if (!amountMsat || !/^[1-9][0-9]*$/.test(amountMsat)) {
         return json(res, 422, { code: 'INVALID_AMOUNT', message: 'Importo in msat richiesto per valutare i canali' });
       }
-      const liveChannels: LiveChannelInput[] = Array.isArray(body.channels)
-        ? (body.channels as LiveChannelInput[])
-        : wallet.ready
-          ? await wallet.channels()
-          : [];
+      let liveChannels: LiveChannelInput[] = [];
+      if (Array.isArray(body.channels)) {
+        liveChannels = body.channels as LiveChannelInput[];
+      } else if (wallet.ready) {
+        liveChannels = await wallet.channels();
+      }
+      if (liveChannels.length === 0 && ragStore.getActiveFixtureContext()) {
+        liveChannels = ragStore.getActiveFixtureContext()!.channels;
+      }
       const knownNodes = await resolveKnownNodes(body.knownNodes);
       const compiledPolicy = parseCompiledPolicy(body.constraints);
       const userPreference = typeof body.userPreference === 'string' ? body.userPreference.slice(0, 500) : null;
-      return json(
-        res,
-        200,
-        await scoreChannelsWithQvac(
-          {
-            amountMsat,
-            assetId,
-            assetAmount,
-            payeePubkey,
-            userPreference,
-            compiledPolicy,
-            channels: liveChannels,
-            knownNodes,
-          },
-          ragStore,
-        ),
-      );
+      const scoringInput = {
+        amountMsat,
+        assetId,
+        assetAmount,
+        payeePubkey,
+        userPreference,
+        compiledPolicy,
+        channels: liveChannels,
+        knownNodes,
+      };
+      if (path === '/api/routing/select-algorithm') {
+        return json(res, 200, await selectRoutingAlgorithmWithQvac(scoringInput, ragStore));
+      }
+      return json(res, 200, await scoreChannelsWithQvac(scoringInput, ragStore));
     }
     if (path !== '/api/constraints/compile') return json(res, 404, { code: 'NOT_FOUND' });
     if (!validate(body.extracted)) return json(res, 400, { code: 'INVALID_SCHEMA' });

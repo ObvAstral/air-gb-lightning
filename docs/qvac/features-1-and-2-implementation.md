@@ -1,8 +1,11 @@
-# QVAC AI Routing Architecture: Features 1 & 2 Technical Specification
+# QVAC AI Routing Architecture: Features 1, 2 & 3 Technical Specification
 
-This document provides the complete technical architecture, data contracts, API endpoints, safety invariants, and implementation details for **Feature 1 (Natural Language Constraint Interpretation & Deterministic Policy Compilation)** and **Feature 2 (Intelligent Channel Scoring via QVAC RAG & Classifier)** in `air-gb-lightning`.
+This document provides the complete technical architecture, data contracts, API endpoints, safety invariants, and implementation details for:
+- **Feature 1**: Natural Language Constraint Interpretation & Deterministic Policy Compilation
+- **Feature 2**: Intelligent Channel Scoring via QVAC RAG & Classifier
+- **Feature 3**: Dynamic Routing Algorithm & MPP Selector + Node-Scoped First-Party History Loader
 
-It is designed as a primary context reference for engineers and AI coding agents working on subsequent features (such as Feature 3) or integrating with the local wallet service (`wallet/apps/local-service`) and web UI (`wallet/apps/web`).
+It is designed as a primary context reference for engineers and AI coding agents integrating with the local wallet service (`wallet/apps/local-service`) and web UI (`wallet/apps/web`).
 
 ---
 
@@ -284,31 +287,107 @@ All `POST` and protected `GET` endpoints require the session header `x-session-t
 | `GET` | `/api/routing/known-nodes` | Returns `{ alias, pubkey }[]` from RLN peers/channels + local regtest peer services (`:8787` Alice, `:8788` Bob). |
 | `POST` | `/api/constraints/interpret` | Accepts `{ text: string }`. Calls QVAC (`extracted.schema.json`), sanitizes, and returns `{ extracted: ExtractedConstraints, latencyMs }`. |
 | `POST` | `/api/constraints/compile` | Accepts `{ extracted, payment, knownNodes? }`. Decodes the BOLT11 invoice on RLN, verifies amounts/assets, and returns `CompileResult` (`CompiledPolicy`). |
-| `GET` | `/api/routing/telemetry` | Returns `{ vectorStoreId, ragBackend: 'qvac-turbovec', count, episodes: TelemetryEpisode[] }`. |
+| `GET` | `/api/routing/telemetry` | Returns `{ vectorStoreId, ragBackend: 'qvac-turbovec', count, totalSqliteCount, activeFixture, episodes: TelemetryEpisode[] }`. |
 | `POST` | `/api/routing/telemetry/seed` | Seeds 5 curated RGB/BTC regtest telemetry episodes into SQLite and QVAC's `/v1/vector_stores` workspace. |
-| `POST` | `/api/routing/score-channels` | Accepts `{ invoice?, amountMsat?, assetId?, assetAmount?, payeePubkey?, userPreference?, constraints?, channels?, knownNodes? }`. Runs TurboVec RAG search + QVAC channel classification and returns `ChannelScoringResult`. |
+| `POST` | `/api/routing/telemetry/load-fixture` | Accepts `{ nodeId: 'alice'..'judy', level: 20\|100\|500\|2000, maxRagIngest? }`. Loads only first-party observations (`nodeHistories[nodeId]`) and local channels (`currentChannelsByNode[nodeId]`) into `QvacRagStore`. |
+| `POST` | `/api/routing/score-channels` | Accepts `{ invoice?, amountMsat?, assetId?, assetAmount?, payeePubkey?, userPreference?, constraints?, channels?, knownNodes? }`. Runs TurboVec RAG search + QVAC channel classification and returns `ChannelScoringResult` with dynamic `recommendedRouting`. |
+| `POST` | `/api/routing/select-algorithm` | Accepts `{ invoice?, amountMsat?, assetId?, assetAmount?, payeePubkey?, userPreference?, constraints?, channels?, knownNodes? }`. Runs Feature 2 channel scoring + `EphemeralRoutingContext` RAM feasibility analysis + Feature 3 QVAC algorithm selector and returns `AlgorithmSelectionResult`. |
 | `POST` | `/api/payments/prepare` | Accepts `{ id, invoice, amountMsat?, constraints?, routing }`. Verifies `CompiledPolicy` fingerprint, merges `max_fee_msat` / `excluded_nodes` / `max_paths`, and saves the idempotent payment intent in SQLite. |
 | `POST` | `/api/payments/confirm` | Executes `/sendpayment` on RLN with the persisted `PaymentRouting` and auto-ingests the terminal outcome (`succeeded` / `failed`) into `QvacRagStore`. |
 
 ---
 
-## 6. Web UI Integration (`wallet/apps/web/src/components/PaymentPanel.tsx`)
+## 6. Feature 3: Dynamic Routing Algorithm & MPP Selector + First-Party History Loader
 
-Inside `PaymentPanel.tsx` (after decoding a BOLT11 invoice):
-1. **Natural Language Routing Constraints (Feature 1)**:
-   - User enters free-form Italian or English constraints in the textarea and clicks **"Analizza vincoli con QVAC"**.
-   - Calls `POST /api/constraints/interpret` followed by `POST /api/constraints/compile`.
-   - When `compile.status === 'validated'`, the UI automatically applies soft priority weights (`multi_objective`) and attaches `compile.policy` to `POST /api/payments/prepare`.
-   - Any edit to the invoice or amount invalidates the compiled policy until re-analyzed.
-2. **Intelligent Channel Scoring via QVAC RAG (Feature 2)**:
-   - **"Valuta canali con QVAC (RAG + Classifier)"** calls `POST /api/routing/score-channels` with the decoded invoice, current NL text (`userPreference`), and any validated `CompiledPolicy`.
-   - Automatically switches the routing algorithm to `multi_objective` with `recommendedWeights` (`fee`, `reliability`, `cltv`, `hops`) and applies `excluded_nodes` / `max_paths`.
-   - Displays per-channel classification badges (`optimal`, `good`, `congested`, `insufficient_liquidity`, `unreliable`, `avoid`), numeric scores (`0–100`), outbound liquidity in sat, RGB local balances, and the top retrieved RAG telemetry hits with cosine similarity scores.
-   - **"Popola telemetria RAG demo"** calls `POST /api/routing/telemetry/seed` so users can immediately test RAG retrieval and channel scoring on fresh regtest setups.
+### 6.1 Purpose & Privacy Rule ("Don't hold other people's data")
+Feature 3 dynamically selects the routing algorithm (`ldk_dijkstra`, `yen`, `min_cost_flow`, or `multi_objective`) and multi-path split count (`max_paths: 1..8`) based on payment size, RGB asset requirements, channel classifications, RAG history, and user constraints.
+
+It strictly enforces the Lightning routing privacy principle:
+1. **First-Party Storage Guard (`assertFirstPartyEpisode` in `wallet/apps/local-service/channel-scoring.ts`)**:
+   - Persistent storage (`SQLite scoring_episodes` and QVAC `/v1/vector_stores`) only accepts the node's own `TelemetryEpisode` observations (incoming/outgoing on its own direct channels).
+   - Any object containing third-party route hops (`hops`, `paths`, `senderNodeId`, `recipientNodeId`), remote channel balance snapshots (`remoteBalanceMsat`, `fromMsat`, `toMsat`, `finalChannelStates`), or secrets/raw invoices is rejected with `PRIVACY_VIOLATION`.
+2. **Node-Scoped Synthetic History Loader (`QvacRagStore.loadSyntheticNodeHistory`)**:
+   - Loads `wallet/tests/fixtures/routing-history/history-{0020,0100,0500,2000}.json` strictly for a single `nodeId` (`alice`..`judy`).
+   - Extracts **only** `data.nodeHistories[nodeId]` and `data.currentChannelsByNode[nodeId]`, ignoring `data.transactions` and `data.finalChannelStates`.
+   - Resets the store into an isolated `(nodeId, level)` scope before loading so cumulative datasets never cross-contaminate.
+3. **Ephemeral RAM-Only Probing (`EphemeralRoutingContext` in `wallet/apps/local-service/routing-selector.ts`)**:
+   - Dichotomous capacity bounds and single-path vs. MPP split feasibility (`singlePathPossible`, `mppPossible`, `recommendedMaxPaths`) are computed strictly in a request-scoped RAM object and zeroed/cleared in `finally { ephemeral.wipe(); }` before the request returns.
+
+### 6.2 Contracts & JSON Schema (`wallet/packages/contracts/algorithm-selection.schema.json` & `types.ts`)
+
+```typescript
+export type AlgorithmSelectionReasonCode =
+  | 'small_fast_single_path'
+  | 'alternative_paths_exploration'
+  | 'mpp_liquidity_split'
+  | 'multi_objective_tradeoff'
+  | 'privacy_single_path'
+  | 'rgb_asset_conservation';
+
+export type EphemeralFeasibilitySummary = {
+  singlePathPossible: boolean;
+  mppPossible: boolean;
+  recommendedMaxPaths: number;
+  usableChannelCount: number;
+  singlePathHealthyChannelCount: number;
+  ephemeralRamWiped: true;
+};
+
+export type AlgorithmSelectionResult = {
+  schemaVersion: '1.0';
+  selectedAlgorithm: RoutingAlgorithm;
+  reasonCode: AlgorithmSelectionReasonCode;
+  rationale: string;
+  recommendedRouting: PaymentRouting;
+  recommendedWeights: ObjectiveWeights;
+  feasibility: EphemeralFeasibilitySummary;
+  channelScoring: ChannelScoringResult;
+  latencyMs: number;
+};
+
+export type SyntheticHistoryLevel = 20 | 100 | 500 | 2000;
+
+export type FixtureLoadResult = {
+  datasetId: string;
+  level: SyntheticHistoryLevel;
+  nodeId: string;
+  loadedSqliteCount: number;
+  ingestedRagCount: number;
+  vectorStoreId: string | null;
+  channels: LiveChannelInput[];
+  knownNodes: { alias: string; pubkey: string }[];
+  privacyCheck: 'first_party_node_scoped_only';
+};
+```
+
+### 6.3 Dynamic Algorithm Selection Rules (`selectRoutingStrategyDeterministic` & `selectRoutingAlgorithmWithQvac`)
+- **`min_cost_flow` (`reasonCode: 'mpp_liquidity_split'`, `max_paths: 2..8`)**: Selected when no single healthy channel can cover `amountMsat` or `assetAmount` (RGB), or when splitting prevents draining a single channel below a safe outbound ratio, provided `avoid_extra_probing` is not active.
+- **`ldk_dijkstra` (`reasonCode: 'small_fast_single_path'`, `max_paths: 1`)**: Selected for small/medium native BTC payments (`<= 15,000,000 msat`) when an `optimal` or `good` single channel covers the payment with no custom multi-objective constraint.
+- **`yen` (`reasonCode: 'alternative_paths_exploration'`, `max_paths: 1`)**: Selected when channels show `congested`/`unreliable` status (`TemporaryChannelFailure` / `HTLCTimeout`) or when `excluded_nodes` require exploring $k$-shortest alternative paths.
+- **`multi_objective` (`reasonCode: 'rgb_asset_conservation' | 'multi_objective_tradeoff'`, `weights`)**: Selected for single-path RGB asset transfers or when user constraints specify custom `lowest_fee` / `reliability` trade-offs.
+- **`privacy_single_path` (`max_paths: 1`)**: Enforced whenever `avoid_extra_probing` / `single_path_privacy` is active.
 
 ---
 
-## 7. Verification & Smoke Test Commands
+## 7. Web UI Integration (`wallet/apps/web/src/`)
+
+Inside the Web UI (`App.tsx` / `CenterWorkspace.tsx` and `PaymentPanel.tsx`):
+1. **Node Switching (`user` WDK `:8789` vs `alice` `:8787` / `bob` `:8788`)**:
+   - Selecting `Wallet (:8789)` uses the standard WDK wallet (`userWallet={true}`), where MPP planners and QVAC routing controls are hidden.
+   - Selecting `Alice (:8787)` or `Bob (:8788)` enables the full QVAC AI Copilot (Chat + Split view), Natural Language Constraint Compiler (Feature 1), QVAC RAG Channel Scoring (Feature 2), Dynamic Algorithm Selector (Feature 3), and Synthetic First-Party History Loader.
+2. **Natural Language Routing Constraints (Feature 1)**:
+   - Calls `POST /api/constraints/interpret` followed by `POST /api/constraints/compile`.
+   - When `compile.status === 'validated'`, the UI automatically applies soft priority weights and attaches `compile.policy` to `POST /api/payments/prepare`.
+   - Any edit to the invoice or amount invalidates the compiled policy until re-analyzed.
+3. **Intelligent Channel Scoring & Dynamic Algorithm Selection (Features 2 & 3)**:
+   - Calling `POST /api/routing/select-algorithm` or `POST /api/routing/score-channels` evaluates live or fixture channels via QVAC TurboVec RAG + `EphemeralRoutingContext`.
+   - Automatically selects the optimal `RoutingAlgorithm` (`ldk_dijkstra`, `yen`, `min_cost_flow`, `multi_objective`), `recommendedWeights`, `max_paths` (for MPP splits), and `excluded_nodes`.
+   - Displays per-channel classification badges (`optimal`, `good`, `congested`, `insufficient_liquidity`, `unreliable`, `avoid`), numeric scores (`0–100`), Feature 3 rationale, and retrieved RAG telemetry episodes.
+   - Synthetic node history (`alice`..`judy`, `20`/`100`/`500`/`2000` tx) can be loaded via `POST /api/routing/telemetry/load-fixture`.
+
+---
+
+## 8. Verification & Smoke Test Commands
 
 Run from `/home/pesce/GitLab_Projects/air-gb-lightning/wallet`:
 
@@ -333,7 +412,7 @@ npm run qvac:smoke:scoring
 ```
 
 
-## 8. Fixture-backed regression coverage
+## 9. Fixture-backed regression coverage
 
 `npm test` now loads the root `topology.json` and the 20/100/500/2000-payment
 fixtures in `wallet/tests/fixtures/routing-history/`. `npm run test:fixtures`

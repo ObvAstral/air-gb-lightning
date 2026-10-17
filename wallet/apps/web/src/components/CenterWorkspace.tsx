@@ -1,14 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import {
   ROUTING_ALGORITHMS,
+  type AlgorithmSelectionResult,
   type ChannelScoringResult,
   type CompileResult,
   type ExtractedConstraints,
+  type FixtureLoadResult,
   type ObjectiveWeights,
   type PaymentDraft,
   type PaymentRouting,
   type Priority,
   type RoutingAlgorithm,
+  type SyntheticHistoryLevel,
 } from '../../../../packages/contracts/types.js';
 import {
   CopyableChip,
@@ -75,6 +78,9 @@ export type ChatActionCardData = {
   compileResult: CompileResult | null;
   suggestedAlgorithm: RoutingAlgorithm;
   suggestedWeights: ObjectiveWeights;
+  suggestedMaxPaths?: number;
+  suggestedExcludedNodes?: string[];
+  algorithmRationale?: string;
   paymentDraft: PaymentDraft;
   decodedInvoice: DecodedInvoiceView | null;
   setupDraft?: SetupOperationDraft;
@@ -117,6 +123,14 @@ export type CenterWorkspaceProps = {
   channelScore: ChannelScoringResult | null;
   onScoreChannelsWithQvac: (userPreference?: string) => Promise<void>;
   onSeedTelemetry: () => Promise<void>;
+  algorithmSelection?: AlgorithmSelectionResult | null;
+  onSelectAlgorithmWithQvac?: (userPreference?: string) => Promise<void>;
+  fixtureNodeId?: string;
+  onChangeFixtureNodeId?: (nodeId: string) => void;
+  fixtureLevel?: SyntheticHistoryLevel;
+  onChangeFixtureLevel?: (level: SyntheticHistoryLevel) => void;
+  fixtureInfo?: FixtureLoadResult | null;
+  onLoadFixtureHistory?: () => Promise<void>;
   preparedIntent: PreparedPaymentIntent | null;
   onPreparePayment: () => Promise<void>;
   onConfirmPayment: () => Promise<void>;
@@ -220,6 +234,14 @@ export function CenterWorkspace({
   channelScore,
   onScoreChannelsWithQvac,
   onSeedTelemetry,
+  algorithmSelection = null,
+  onSelectAlgorithmWithQvac,
+  fixtureNodeId = 'alice',
+  onChangeFixtureNodeId,
+  fixtureLevel = 100,
+  onChangeFixtureLevel,
+  fixtureInfo = null,
+  onLoadFixtureHistory,
   preparedIntent,
   onPreparePayment,
   onConfirmPayment,
@@ -593,7 +615,7 @@ export function CenterWorkspace({
                   onClick={() => onSelectActiveNode(node.id)}
                 >
                   <span className="switch-dot">
-                    {node.accent === 'purple' ? '🟣' : '🔵'}
+                    {node.accent === 'emerald' ? '🟢' : node.accent === 'purple' ? '🟣' : '🔵'}
                   </span>
                   <span className="switch-name">{node.label}</span>
                   <code className="switch-port">:{node.port}</code>
@@ -1183,15 +1205,19 @@ export function CenterWorkspace({
                 ) : (
                 <div className="form-card">
                   <div className="card-header-row">
-                    <h3>2. Configurazione Algoritmo di Routing</h3>
+                    <h3>2. Configurazione Algoritmo di Routing (Feature 2 + 3)</h3>
                     <div className="inline-actions">
                       <button
                         type="button"
                         className="btn-qvac btn-xs"
-                        disabled={qvacBusy || !paymentDraft.invoice.trim()}
-                        onClick={() => void onScoreChannelsWithQvac()}
+                        disabled={qvacBusy}
+                        onClick={() =>
+                          void (onSelectAlgorithmWithQvac
+                            ? onSelectAlgorithmWithQvac()
+                            : onScoreChannelsWithQvac())
+                        }
                       >
-                        🧠 Score Canali (QVAC RAG)
+                        🧭 Scegli Algoritmo + Score Canali (QVAC)
                       </button>
                       <button
                         type="button"
@@ -1203,6 +1229,57 @@ export function CenterWorkspace({
                       </button>
                     </div>
                   </div>
+
+                  {/* Synthetic First-Party History Loader */}
+                  {onLoadFixtureHistory && (
+                    <div className="row-3col" style={{ marginBottom: '0.75rem', alignItems: 'end' }}>
+                      <label className="compact-label">
+                        Nodo First-Party (Topologia)
+                        <select
+                          value={fixtureNodeId}
+                          onChange={e => onChangeFixtureNodeId?.(e.target.value)}
+                          disabled={qvacBusy}
+                        >
+                          {(['alice', 'bob', 'carol', 'dave', 'erin', 'frank', 'grace', 'heidi', 'ivan', 'judy'] as const).map(n => (
+                            <option key={n} value={n}>
+                              {n.charAt(0).toUpperCase() + n.slice(1)} (first-party)
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="compact-label">
+                        Dataset Storico (Tx)
+                        <select
+                          value={fixtureLevel}
+                          onChange={e => onChangeFixtureLevel?.(Number(e.target.value) as SyntheticHistoryLevel)}
+                          disabled={qvacBusy}
+                        >
+                          {([20, 100, 500, 2000] as const).map(lvl => (
+                            <option key={lvl} value={lvl}>
+                              history-{String(lvl).padStart(4, '0')}.json ({lvl} tx)
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-xs"
+                        disabled={qvacBusy}
+                        onClick={() => void onLoadFixtureHistory()}
+                      >
+                        📥 Carica Storico Nodo
+                      </button>
+                    </div>
+                  )}
+
+                  {fixtureInfo && (
+                    <p className="muted-text" style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '0.8rem' }}>
+                      Storico first-party attivo: <strong>{fixtureInfo.nodeId.toUpperCase()}</strong> ·{' '}
+                      <code>{fixtureInfo.datasetId}</code> ({fixtureInfo.loadedSqliteCount} episodi SQLite,{' '}
+                      {fixtureInfo.ingestedRagCount} su QVAC RAG · privacy:{' '}
+                      <code>{fixtureInfo.privacyCheck}</code>)
+                    </p>
+                  )}
 
                   <label className="compact-label">
                     Seleziona Algoritmo RLN
@@ -1253,6 +1330,30 @@ export function CenterWorkspace({
                           />
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {algorithmSelection && (
+                    <div className="channel-score-card" style={{ marginBottom: '0.6rem' }}>
+                      <div className="card-header-row">
+                        <span className="qvac-pill">
+                          FEATURE 3 ALGORITMO: {algorithmSelection.selectedAlgorithm.toUpperCase()} ·{' '}
+                          {algorithmSelection.reasonCode.toUpperCase()}
+                        </span>
+                        <span className="mono-small">
+                          {algorithmSelection.recommendedRouting.max_paths &&
+                          algorithmSelection.recommendedRouting.max_paths > 1
+                            ? `MPP max_paths=${algorithmSelection.recommendedRouting.max_paths}`
+                            : 'Single-Path (max_paths=1)'}{' '}
+                          · {algorithmSelection.latencyMs} ms
+                        </span>
+                      </div>
+                      <p className="muted-text">{algorithmSelection.rationale}</p>
+                      <span className="mono-small">
+                        Canali usabili: {algorithmSelection.feasibility.usableChannelCount} · Singolo path sano:{' '}
+                        {algorithmSelection.feasibility.singlePathHealthyChannelCount} · Probing effimero RAM:{' '}
+                        {algorithmSelection.feasibility.ephemeralRamWiped ? 'WIPED ✓' : 'n/a'}
+                      </span>
                     </div>
                   )}
 
