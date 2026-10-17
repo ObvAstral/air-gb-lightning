@@ -16,14 +16,12 @@ const environment = {
   ...process.env, ...regtest,
   AIRGB_DATA_DIR: join(root, 'native-data/peer-wallet'),
   AIRGB_LDK_PEER_PORT: '9736',
-  AIRGB_WEB_PORT: '5174',
-  AIRGB_API_PORT: '8788',
+  AIRGB_WEB_PORT: process.env.AIRGB_WEB_PORT ?? '5173',
   PORT: '8788',
-  ENABLE_REGTEST_SEND: '0',
+  ENABLE_REGTEST_SEND: process.env.ENABLE_REGTEST_SEND ?? regtest.ENABLE_REGTEST_SEND ?? '0',
 };
 const children = [
   spawn(process.execPath, ['--import', 'tsx', 'apps/local-service/server.ts'], { cwd: root, env: environment, stdio: 'inherit' }),
-  spawn(process.execPath, ['node_modules/vite/bin/vite.js'], { cwd: root, env: environment, stdio: 'inherit' }),
 ];
 let stopping = false;
 function stop() {

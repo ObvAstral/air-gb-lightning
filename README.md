@@ -122,6 +122,21 @@ npm run dev:regtest
 npm run dev:peer
 ```
 
+Both services use the single UI at `http://127.0.0.1:5173`; `dev:peer` starts
+only Bob's API on port `8788`. In each shell, make sure `node --version` is
+`v24.19.0`. If the local runtime is already present, from `wallet/` use:
+
+```bash
+export PATH="$PWD/native-data/node-v24.19.0/bin:$PATH"
+```
+
+For the host setup, start the dependencies from the repository root with
+`docker compose --env-file wallet/native-data/regtest/wallet.env up -d bitcoind electrs proxy`.
+Run `./scripts/regtest.sh init-chain` on the first startup only. To enable
+regtest payments, export `ENABLE_REGTEST_SEND=1` before starting each host service.
+For AI interpretation, start `npm run qvac:serve` in a separate shell and export
+`QVAC_MODEL=my-llm` before starting Alice.
+
 ## Testing
 
 From `wallet/`:
