@@ -68,6 +68,8 @@ docker compose up -d --build
 cd wallet && npm run dev:ui
 ```
 
+`./scripts/bootstrap-demo.sh` from the repository root does this startup, then creates and unlocks Alice and Bob, funds them, issues the DEMO asset, and opens the RGB channel. It does not create invoices or send payments; those stay in the UI at `http://127.0.0.1:5173`. The script also starts the UI and `qvac:serve` when ports `5173` and `11434` are free. A second run skips steps that are already done.
+
 UI at `http://127.0.0.1:5173`. Alice is `127.0.0.1:8787`, Bob is
 `127.0.0.1:8788`. Daemons are started upon unlocking wallets and stopped
 together with the service; logs are in `rgb-lightning-node/daemon.log` in

@@ -48,6 +48,7 @@ services:
       PORT: "8787"
       AIRGB_LDK_PEER_PORT: "9735"
       AIRGB_ANNOUNCE_HOST: alice
+      QVAC_MODEL: my-llm
     depends_on:
       - bitcoind
       - electrs
@@ -55,8 +56,12 @@ services:
     ports:
       - "127.0.0.1:8787:8787"
       - "127.0.0.1:9735:9735"
+    # Image only accepts QVAC on 127.0.0.1. The server runs on the host, so bridge loopback :11434 to it.
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
     volumes:
       - alice-mpp-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
   bob:
     image: airgb-regtest-node-mpp
     build:
@@ -74,8 +79,11 @@ services:
     ports:
       - "127.0.0.1:8788:8788"
       - "127.0.0.1:9736:9736"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/server.ts"]
     volumes:
       - bob-mpp-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
   user:
     image: airgb-regtest-user
     build:
@@ -95,6 +103,7 @@ services:
       PORT: "8789"
       AIRGB_USER_PEER_PORT: "9739"
       AIRGB_USER_ANNOUNCE_HOST: user
+      QVAC_MODEL: my-llm
     depends_on:
       - bitcoind
       - electrs
@@ -102,8 +111,11 @@ services:
     ports:
       - "127.0.0.1:8789:8789"
       - "127.0.0.1:9739:9739"
+    command: ["node", "/qvac-bridge.mjs", "apps/local-service/user-server.ts"]
     volumes:
       - user-wallet-data:/data
+      - ./wallet/infra/regtest/qvac-bridge.mjs:/qvac-bridge.mjs:ro
+      - ./wallet/apps/local-service/interpret.ts:/app/apps/local-service/interpret.ts:ro
 volumes:
   bitcoin-data:
   electrs-data:

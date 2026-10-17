@@ -34,7 +34,7 @@ function sanitizeQvacRaw(raw: unknown, text: string): unknown {
   }
 
   // 2. Priority normalization based on explicit user intent
-  if (/(?:spendere\s+il\s+meno\s+possibile|preferisco\s+risparmiare|risparmiare|spend\s+as\s+little|lowest\s+fee)/i.test(text)) {
+  if (/(?:spendere\s+il\s+meno\s+possibile|preferisco\s+risparmiare|risparmiare|spend\s+as\s+little|lowest[\s_-]*fee)/i.test(text)) {
     obj.priority = 'lowest_fee';
   } else if (/(?:affidabil|riuscit|reliab|success)/i.test(text)) {
     obj.priority = 'reliability';
