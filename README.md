@@ -47,7 +47,7 @@ of RAM. The compiler and toolchain are also installed inside the container.
 Compose uses the new `alice-mpp-data` and `bob-mpp-data` volumes, keeping them separate
 from the previous `alice-data` and `bob-data`. Old passwords, identities, keys, and
 UTEXO channels are not migrated: new wallets must be created and funded.
-Do not run `docker compose down -v` to switch to the fork.
+`./scripts/regtest.sh reset` deletes both pairs, together with the chain and `wallet.env`.
 
 On the host, choose a new `AIRGB_DATA_DIR` if it already contains UTEXO data.
 The service refuses to open a directory with existing `wdk-rgb-lightning` state.
@@ -74,7 +74,10 @@ together with the service; logs are in `rgb-lightning-node/daemon.log` in
 each wallet's directory. An abnormal shutdown preserves the `.owner` file:
 verify first that the daemon has terminated and the state is intact.
 
-From `wallet/`, the CLI can directly issue a NIA on the fork node:
+From `wallet/`, the CLI issues a NIA on the fork node and moves it over Lightning.
+Replace `rgb:...` and `lnbcrt...` with the asset id and the `invoice` line just printed, not the on-chain address.
+Passwords come from `AIRGB_ALICE_PASSWORD` and `AIRGB_BOB_PASSWORD`, or from the prompt.
+The UI exposes the same operations.
 
 ```bash
 npm run cli -- create alice
@@ -92,16 +95,22 @@ npm run cli -- invoice bob --asset rgb:... --amount 10
 npm run cli -- pay alice --invoice lnbcrt... --algorithm ldk_dijkstra
 ```
 
-Passwords in `AIRGB_ALICE_PASSWORD` and `AIRGB_BOB_PASSWORD`, or entered at the prompt.
-`channel` waits for the funding transaction, mines, and verifies the channel.
-`mine` mines in batches of 6 up to 100 blocks. The UI exposes the same operations.
-Payments require an explicit routing algorithm: `ldk_dijkstra`, `yen`,
-`min_cost_flow`, or `multi_objective`. Choose it in the UI or pass `--algorithm`
-to `pay`. For `multi_objective`, also pass
-`--weights '{"fee":1,"reliability":2,"cltv":1,"hops":10}'`; the UI exposes these
-four weights. Each weight must be an integer between 0 and 1000000 and at least
-one must be positive. The alternative planners are experimental and may fail
-where another algorithm succeeds; the selected algorithm is never changed automatically.
+- `create` creates the wallet and prints the mnemonic once.
+- `unlock` unlocks the wallet and starts the daemon.
+- `fund` sends BTC from the miner and mines one block.
+- `utxos` prepares RGB UTXOs; the next block confirms them.
+- `mine` mines up to 100 blocks, in batches of 6, and syncs the nodes.
+- `issue` issues a NIA and prints its `rgb:` id.
+- `connect` opens the Lightning connection to the other node.
+- `channel` opens the channel, waits for the funding transaction, mines, and checks that it is usable.
+- `invoice` creates a Lightning invoice to receive the asset.
+- `pay` pays that invoice. `--algorithm` is required: `ldk_dijkstra`, `yen`, `min_cost_flow`, or `multi_objective`.
+- `status` prints state, balance, assets, and channels. `sync` realigns the chain and RGB transfers.
+
+For `multi_objective`, also pass `--weights '{"fee":1,"reliability":2,"cltv":1,"hops":10}'`.
+Each weight is an integer from 0 to 1000000 and at least one must be positive.
+The other planners are experimental and may fail where another algorithm succeeds;
+the selected algorithm is never changed automatically.
 
 `POST /api/payments/prepare` requires `routing`, for example
 `{"id":"payment-0001","invoice":"lnbcrt...","routing":{"algorithm":"yen"}}`.
@@ -136,6 +145,19 @@ Run `./scripts/regtest.sh init-chain` on the first startup only. To enable
 regtest payments, export `ENABLE_REGTEST_SEND=1` before starting each host service.
 For AI interpretation, start `npm run qvac:serve` in a separate shell and export
 `QVAC_MODEL=my-llm` before starting Alice.
+
+## Reset
+
+```bash
+./scripts/regtest.sh reset
+```
+
+Stops the containers and deletes the chain, the Electrs index, every Alice and Bob
+volume (`alice-data`, `bob-data`, `alice-mpp-data`, `bob-mpp-data`), the on-chain
+issuer, the host wallet directories, and `wallet.env`.
+The node image stays, so the next startup does not recompile Rust.
+Open a new shell so exported passwords and `BITCOIND_RPC_PASSWORD` are gone,
+then repeat Startup from `node infra/regtest/setup.mjs`.
 
 ## Testing
 

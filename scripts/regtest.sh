@@ -12,7 +12,28 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-if [[ -z "${BITCOIND_RPC_PASSWORD:-}" ]]; then
+reset_regtest() {
+  echo "Arresto i container e cancello chain, indice, wallet Alice/Bob (MPP e UTEXO), emittente e wallet.env."
+  if [[ -z "${BITCOIND_RPC_PASSWORD:-}" ]]; then
+    export BITCOIND_RPC_PASSWORD=reset
+  fi
+  "${COMPOSE[@]}" down --remove-orphans -v
+  docker volume rm -f \
+    airgb-regtest_bitcoin-data \
+    airgb-regtest_electrs-data \
+    airgb-regtest_alice-data \
+    airgb-regtest_bob-data \
+    airgb-regtest_alice-mpp-data \
+    airgb-regtest_bob-mpp-data
+  rm -rf \
+    "$ROOT/wallet/native-data/regtest" \
+    "$ROOT/wallet/native-data/wallet" \
+    "$ROOT/wallet/native-data/peer-wallet" \
+    "$ROOT/wallet/native-data"/e2e-mpp-*
+  echo "Reset completato. Apri una shell nuova, poi da wallet/: node infra/regtest/setup.mjs"
+}
+
+if [[ "${1:-}" != "reset" && -z "${BITCOIND_RPC_PASSWORD:-}" ]]; then
   echo "Manca BITCOIND_RPC_PASSWORD. Da wallet/: node infra/regtest/setup.mjs" >&2
   exit 1
 fi
@@ -66,8 +87,9 @@ case "${1:-}" in
   init-chain) init_chain ;;
   mine) mine "${2:-1}" ;;
   fund) fund "${2:-}" "${3:-}" ;;
+  reset) reset_regtest ;;
   *)
-    echo "Uso: $0 init-chain | mine [blocchi] | fund <address> <btc>" >&2
+    echo "Uso: $0 init-chain | mine [blocchi] | fund <address> <btc> | reset" >&2
     exit 1
     ;;
 esac
