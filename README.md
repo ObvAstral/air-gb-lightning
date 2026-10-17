@@ -165,6 +165,7 @@ From `wallet/`:
 
 ```bash
 npm test
+npm run test:fixtures
 npm run typecheck
 npm run build
 node --import tsx infra/regtest/smoke-api.mjs
@@ -173,6 +174,11 @@ node --env-file=native-data/regtest/wallet.env --import tsx infra/regtest/smoke-
 node --env-file=native-data/regtest/wallet.env --import tsx infra/regtest/e2e-lightning.mjs
 npm run test:mpp
 ```
+
+The default suite loads `topology.json` and all four synthetic history datasets.
+`test:fixtures` runs their integrity, storage, scoring and payment-policy contract
+tests. See [fixture coverage and live QVAC commands](wallet/tests/fixtures/routing-history/README.md#suite-automatica-collegata-ai-json)
+for the exact boundary between mocked services, reference-route checks and live tests.
 
 Regtest tests require bitcoind, electrs, and proxy to already be running and `init-chain`
 to be executed. `test:mpp` starts four daemons on P2P ports `9765–9768`, issues

@@ -83,7 +83,7 @@ export class QvacRagStore {
   private db: DatabaseSync;
   private verifiedVectorStoreId: string | null = null;
 
-  constructor(directory: string) {
+  constructor(directory: string, private vectorStoreName = VECTOR_STORE_NAME) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(join(directory, 'payments.sqlite'));
     this.db.exec(`
@@ -195,7 +195,7 @@ export class QvacRagStore {
         return matchSaved.id;
       }
     }
-    const matchNamed = stores.find(s => s.name === VECTOR_STORE_NAME || s.id === VECTOR_STORE_NAME);
+    const matchNamed = stores.find(s => s.name === this.vectorStoreName || s.id === this.vectorStoreName);
     if (matchNamed?.id) {
       this.setSavedVectorStoreId(matchNamed.id);
       this.verifiedVectorStoreId = matchNamed.id;
@@ -207,7 +207,7 @@ export class QvacRagStore {
       headers: { 'content-type': 'application/json' },
       signal: AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])]),
       body: JSON.stringify({
-        name: VECTOR_STORE_NAME,
+        name: this.vectorStoreName,
         metadata: { app: 'air-gb-lightning', feature: 'channel-scoring' },
       }),
     });
@@ -313,7 +313,9 @@ export class QvacRagStore {
       /* Fallback to local episode matching if QVAC search fails or workspace has not been populated yet. */
     }
 
-    const local = this.listEpisodes(20);
+    // Rank the complete local history before taking top-K; LIMIT 20 loses
+    // relevant older episodes as soon as a wallet accumulates more history.
+    const local = this.listEpisodes(-1);
     const terms = cleanQuery.toLocaleLowerCase().split(/\W+/).filter(t => t.length > 2);
     const scored = local
       .map(ep => {
@@ -709,7 +711,9 @@ export function sanitizeAndValidateChannelScore(
     'avoid',
   ];
 
-  const rawChannels = Array.isArray(obj.channels) ? (obj.channels as Record<string, unknown>[]) : [];
+  const rawChannels = Array.isArray(obj.channels)
+    ? obj.channels.filter((value): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value))
+    : [];
   const normalizedChannels: ChannelScoreEntry[] = input.channels.map((live, idx) => {
     const fallback = deterministicChannelFallback(live, idx, input, aliasMap);
     const match = rawChannels.find(

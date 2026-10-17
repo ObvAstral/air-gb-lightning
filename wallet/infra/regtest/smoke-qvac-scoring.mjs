@@ -1,156 +1,118 @@
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { parseArgs } from 'node:util';
 import { QvacRagStore, scoreChannelsWithQvac } from '../../apps/local-service/channel-scoring.ts';
+import { compileConstraints } from '../../packages/policy/compile.ts';
+import { capabilities, loadHistory, manifest, resolved, topology } from '../../tests/helpers/routing-fixtures.ts';
 
-const walletRoot = fileURLToPath(new URL('../../', import.meta.url));
-const configPath = path.join(walletRoot, 'qvac.config.json');
-const qvacUrl = process.env.QVAC_URL ?? 'http://127.0.0.1:11434';
-const targetModel = process.env.QVAC_MODEL ?? 'qwen-fast';
-
-const ALICE_PUBKEY = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
-const BOB_PUBKEY = '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5';
-const CAROL_PUBKEY = '02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9';
-const DAVE_PUBKEY = '02e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13';
-
-async function isServerUp() {
-  try {
-    const res = await fetch(`${qvacUrl}/v1/models`, { signal: AbortSignal.timeout(2000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
+const { values } = parseArgs({ options: {
+  history: { type: 'string', default: '20' }, node: { type: 'string', default: 'alice' },
+  all: { type: 'boolean', default: false }, 'dry-run': { type: 'boolean', default: false },
+} });
+const sizes = values.all ? manifest.datasets.map(entry => entry.transactionCount) : [Number(values.history)];
+const nodeIds = values.all ? topology.nodes.map(node => node.id) : [values.node];
+assert(sizes.every(size => manifest.datasets.some(entry => entry.transactionCount === size)), 'Use --history 20|100|500|2000');
+assert(nodeIds.every(id => topology.nodes.some(node => node.id === id)), 'Unknown --node in topology.json');
+const matrix = sizes.flatMap(size => nodeIds.map(nodeId => ({ size, nodeId })));
+for (const item of matrix) {
+  const fixture = loadHistory(item.size);
+  assert(fixture.nodeHistories[item.nodeId].length > 0);
 }
-
-async function waitForServer(timeoutMs = 120000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await isServerUp()) return;
-    await new Promise(r => setTimeout(r, 1500));
-  }
-  throw new Error(`Timed out waiting for QVAC server at ${qvacUrl}`);
+if (values['dry-run']) {
+  console.log(JSON.stringify({ mode: 'dry-run', topology: topology.name, cases: matrix.map(({ size, nodeId }) => ({
+    transactions: size, nodeId, episodes: loadHistory(size).nodeHistories[nodeId].length,
+  })), realInference: false, uploads: 0 }));
+  process.exit(0);
 }
-
-let child = null;
-const alreadyRunning = await isServerUp();
-
-if (!alreadyRunning) {
-  console.log(`Starting qvac serve --openai -c ${configPath} ...`);
-  child = spawn('qvac', ['serve', '--openai', '--port', '11434', '-c', configPath], {
-    cwd: walletRoot,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  child.stdout.on('data', chunk => process.stdout.write(`[qvac] ${chunk}`));
-  child.stderr.on('data', chunk => process.stderr.write(`[qvac] ${chunk}`));
-}
-
-const tempDir = await mkdtemp(path.join(tmpdir(), 'airgb-qvac-scoring-smoke-'));
-const ragStore = new QvacRagStore(tempDir);
-
+const base = new URL(process.env.QVAC_URL ?? 'http://127.0.0.1:11434');
+assert(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'QVAC must run on HTTP loopback');
+process.env.QVAC_URL = base.href;
+process.env.QVAC_MODEL ??= 'qwen-fast';
 try {
-  await waitForServer();
-  process.env.QVAC_URL = qvacUrl;
-  process.env.QVAC_MODEL = targetModel;
+  const models = await fetch(new URL('/v1/models', base), { signal: AbortSignal.timeout(2000) });
+  assert(models.ok, `QVAC models HTTP ${models.status}`);
+} catch (error) {
+  throw new Error('QVAC non raggiungibile: avviare npm run qvac:serve prima dello smoke test.', { cause: error });
+}
 
-  const knownNodes = [
-    { alias: 'Alice', pubkey: ALICE_PUBKEY },
-    { alias: 'Bob', pubkey: BOB_PUBKEY },
-    { alias: 'Carol-Relay', pubkey: CAROL_PUBKEY },
-  ];
-
-  const channels = [
-    {
-      channelId: 'ch-bob-primary-01',
-      peerNodeId: BOB_PUBKEY,
-      assetId: 'rgb:2eVw8uw-9bf88LQ-T357192-G12422M-749193s-n39485',
-      capacitySat: '100000',
-      outboundMsat: '78000000',
-      inboundMsat: '22000000',
-      assetLocalAmount: '120',
-      assetRemoteAmount: '30',
-      isUsable: true,
-    },
-    {
-      channelId: 'ch-congested-edge-02',
-      peerNodeId: CAROL_PUBKEY,
-      assetId: 'rgb:2eVw8uw-9bf88LQ-T357192-G12422M-749193s-n39485',
-      capacitySat: '100000',
-      outboundMsat: '11000000',
-      inboundMsat: '89000000',
-      assetLocalAmount: '60',
-      assetRemoteAmount: '90',
-      isUsable: true,
-    },
-    {
-      channelId: 'ch-offline-03',
-      peerNodeId: DAVE_PUBKEY,
-      assetId: 'rgb:2eVw8uw-9bf88LQ-T357192-G12422M-749193s-n39485',
-      capacitySat: '50000',
-      outboundMsat: '500000',
-      inboundMsat: '49500000',
-      assetLocalAmount: '2',
-      assetRemoteAmount: '48',
-      isUsable: false,
-    },
-  ];
-
-  console.log('\n1. Seeding demo telemetry into QVAC /v1/vector_stores (TurboVec + EMBEDDINGGEMMA_300M_Q4_0)...');
-  const seeded = await ragStore.seedDemoEpisodes({ channels, knownNodes });
-  assert.equal(seeded.seededCount, 5);
-  assert.ok(seeded.vectorStoreId, 'Expected a valid vectorStoreId from qvac serve');
-  console.log(`   ✓ Vector store ready: ${seeded.vectorStoreId} (${seeded.seededCount} episodes ingested)`);
-
-  console.log('\n2. Running QVAC RAG Search + Channel Scoring Classifier...');
-  const result = await scoreChannelsWithQvac(
-    {
-      amountMsat: '3000000',
-      assetId: 'rgb:2eVw8uw-9bf88LQ-T357192-G12422M-749193s-n39485',
-      assetAmount: '15',
-      payeePubkey: BOB_PUBKEY,
-      userPreference: 'Voglio un pagamento affidabile evitando canali congestionati',
-      channels,
-      knownNodes,
-    },
-    ragStore,
-  );
-
-  console.log(`   ✓ Profile: ${result.overallProfile} (${result.latencyMs} ms)`);
-  console.log(`   ✓ Weights: ${JSON.stringify(result.recommendedWeights)}`);
-  console.log(`   ✓ RAG hits retrieved: ${result.ragHits.length}`);
-  for (const hit of result.ragHits) {
-    console.log(`     - [score=${hit.score}] ${hit.filename}: ${hit.text.slice(0, 100)}...`);
-  }
-  console.log('   ✓ Channel classifications:');
-  for (const ch of result.channels) {
-    console.log(`     - ${ch.channelId} (${ch.peerAlias ?? ch.peerNodeId.slice(0, 12)}): [${ch.classification} · ${ch.score}/100] ${ch.reason}`);
-  }
-
-  assert.equal(result.schemaVersion, '1.0');
-  assert.equal(result.ragBackend, 'qvac-turbovec');
-  assert.ok(result.ragHits.length > 0, 'Expected at least 1 RAG telemetry hit from vector store search');
-  assert.equal(result.channels.length, 3);
-  const bobCh = result.channels.find(c => c.channelId === 'ch-bob-primary-01');
-  const offlineCh = result.channels.find(c => c.channelId === 'ch-offline-03');
-  assert.ok(bobCh && (bobCh.classification === 'optimal' || bobCh.classification === 'good'));
-  assert.equal(offlineCh?.classification, 'avoid');
-  assert.equal(result.excludedNodeIds.includes(BOB_PUBKEY), false);
-  assert.equal(result.excludedNodeIds.includes(DAVE_PUBKEY), true);
-
-  console.log('\n=== QVAC RAG + Channel Scoring Smoke Test PASSED ===');
-} finally {
-  ragStore.close();
-  await rm(tempDir, { recursive: true, force: true });
-  if (child) {
-    child.kill('SIGTERM');
-    await new Promise(resolve => {
-      child.once('exit', resolve);
-      setTimeout(() => {
-        child.kill('SIGKILL');
-        resolve();
-      }, 5000);
+// A live smoke test must fail on a RAG outage rather than pass using SQLite fallback.
+class StrictQvacRagStore extends QvacRagStore {
+  async searchEpisodes(query, topK = 4, signal) {
+    const vectorStoreId = await this.ensureVectorStore(signal);
+    const response = await fetch(new URL(`/v1/vector_stores/${encodeURIComponent(vectorStoreId)}/search`, base), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query, max_num_results: Math.max(1, Math.min(10, topK)) }),
+      signal: AbortSignal.any([AbortSignal.timeout(25000), ...(signal ? [signal] : [])]),
     });
+    assert(response.ok, `Real QVAC search failed: HTTP ${response.status}`);
+    const body = await response.json();
+    const hits = (body.data ?? []).map(item => ({ fileId: item.file_id, filename: item.filename ?? `${item.file_id}.txt`,
+      score: item.score ?? 0, text: (item.content ?? []).map(block => block.text ?? '').join(' ') })).filter(hit => hit.text);
+    assert(hits.length > 0, 'Real QVAC returned no indexed telemetry; SQLite fallback is disabled for this test');
+    return { vectorStoreId, hits };
   }
 }
+let passed = 0;
+const failures = [];
+for (const { size, nodeId } of matrix) {
+  const fixture = loadHistory(size), directory = await mkdtemp(join(tmpdir(), 'airgb-live-fixture-score-'));
+  const store = new StrictQvacRagStore(directory, `airgb-fixture-${size}-${nodeId}-${randomUUID()}`);
+  try {
+    const entries = fixture.nodeHistories[nodeId];
+    console.log(JSON.stringify({ step: 'ingest', transactions: size, nodeId, episodes: entries.length }));
+    for (const [index, entry] of entries.entries()) {
+      const result = await store.ingestEpisode(entry.episode);
+      assert(result.fileId && result.vectorStoreId, `Episode ${entry.episode.id} was only saved locally, not indexed in QVAC`);
+      if ((index + 1) % 25 === 0) console.log(JSON.stringify({ step: 'ingest_progress', nodeId, uploaded: index + 1, total: entries.length }));
+    }
+    const ownFiles = new Set(store.listEpisodes(-1).map(ep => ep.fileId));
+    const scenario = topology.scenarios.find(s => s.id === 'fee-inclusive-boundary');
+    const extracted = resolved(scenario).extracted;
+    const channels = fixture.currentChannelsByNode[nodeId];
+    const payeePubkey = channels[0].peerNodeId;
+    const compiled = compileConstraints({ extracted,
+      payment: { invoice: 'lnbcrtfixtureqvac', amount: topology.paymentDefaults.amountMsat, assetId: channels[0].assetId, network: 'regtest' },
+      capabilities, knownNodes: fixture.knownNodes, payeePubkey });
+    assert.equal(compiled.status, 'validated');
+    const result = await scoreChannelsWithQvac({ amountMsat: topology.paymentDefaults.amountMsat,
+      assetId: channels[0].assetId, assetAmount: '5', payeePubkey, userPreference: 'Preferisco affidabilita',
+      compiledPolicy: compiled.policy, channels, knownNodes: fixture.knownNodes }, store);
+    assert(result.ragHits.every(hit => ownFiles.has(hit.fileId)), 'RAG retrieved episodes from another node or dataset');
+    assert.equal(result.channels.length, channels.length);
+    assert.deepEqual(new Set(result.channels.map(ch => ch.channelId)), new Set(channels.map(ch => ch.channelId)));
+    assert.equal(result.recommendedRouting.max_fee_msat, 3000);
+    assert(!result.excludedNodeIds.includes(payeePubkey));
+    for (const scored of result.channels) {
+      const channel = channels.find(ch => ch.channelId === scored.channelId);
+      assert.equal(scored.peerNodeId, channel.peerNodeId);
+      assert(Number.isInteger(scored.score) && scored.score >= 0 && scored.score <= 100);
+      if (BigInt(channel.assetLocalAmount) < 5n || BigInt(channel.outboundMsat) < BigInt(topology.paymentDefaults.amountMsat)) {
+        assert.equal(scored.classification, 'insufficient_liquidity');
+      }
+    }
+    passed++;
+    console.log(JSON.stringify({ step: 'passed', transactions: size, nodeId, realInference: true, ragHits: result.ragHits.length, profile: result.overallProfile }));
+  } catch (error) {
+    failures.push({ transactions: size, nodeId, error: error.message });
+    console.error(JSON.stringify({ step: 'failed', ...failures.at(-1) }));
+  } finally {
+    const files = store.listEpisodes(-1).map(ep => ep.fileId).filter(Boolean);
+    const vectorStoreId = store.getSavedVectorStoreId();
+    store.close();
+    // Delete only resources belonging to this fresh, uniquely named test store.
+    for (const path of [...(vectorStoreId ? [`/v1/vector_stores/${encodeURIComponent(vectorStoreId)}`] : []), ...files.map(id => `/v1/files/${encodeURIComponent(id)}`)]) {
+      try {
+        const response = await fetch(new URL(path, base), { method: 'DELETE', signal: AbortSignal.timeout(10000) });
+        assert(response.ok || response.status === 404, `Cleanup HTTP ${response.status}`);
+      } catch (error) {
+        failures.push({ transactions: size, nodeId, error: `Cleanup: ${error.message}` });
+      }
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+console.log(JSON.stringify({ cases: matrix.length, passed, failures, mode: 'live_qvac_fixture_scoring', nativeRoutingExecuted: false }));
+assert.equal(failures.length, 0, 'Live fixture scoring failed');

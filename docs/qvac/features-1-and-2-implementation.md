@@ -316,7 +316,7 @@ Run from `/home/pesce/GitLab_Projects/air-gb-lightning/wallet`:
 # TypeScript typecheck across all workspaces (local-service, web, contracts, policy)
 npm run typecheck
 
-# Full unit & integration test suite (33 tests covering Feature 1, Feature 2, RLN, and SQLite)
+# Unit & integration suite, including topology and synthetic-history fixtures
 npm test
 
 # Production Vite build for @airgb/web
@@ -331,3 +331,24 @@ npm run qvac:smoke
 # Live QVAC Feature 2 smoke test (TurboVec RAG /v1/vector_stores ingestion, search & classification)
 npm run qvac:smoke:scoring
 ```
+
+
+## 8. Fixture-backed regression coverage
+
+`npm test` now loads the root `topology.json` and the 20/100/500/2000-payment
+fixtures in `wallet/tests/fixtures/routing-history/`. `npm run test:fixtures`
+selects the four fixture-backed test files. Their TypeScript is included in
+`npm run typecheck`. The suite covers all 10 nodes, incoming/outgoing history,
+store restart and deduplication, full-history local retrieval, scoring safety
+guards, and all 16 topology scenarios with four RPC algorithm payloads each.
+
+The independent route oracle validates fixture expectations; it does not run
+the Rust algorithms. The RPC integration tests use real service classes with
+mocked daemon responses. A complete ten-node native end-to-end runner remains
+separate work.
+
+`npm run qvac:smoke:scoring -- --all` runs the 40 dataset/node combinations
+against an already running QVAC server. It uses isolated vector stores and
+requires actual remote retrieval, with no successful local fallback. Use
+`--all --dry-run` to check the selected matrix without inference or uploads.
+See the fixture README for the coverage matrix and prerequisites.

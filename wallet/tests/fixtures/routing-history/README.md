@@ -131,3 +131,69 @@ node wallet/scripts/generate-routing-history.mjs --check
 scriverli. Verifica riferimenti ai nodi e ai canali, prefissi cumulativi, importi
 MPP, fee, conservazione e disponibilita dei saldi, osservazioni in entrata e
 uscita e controlli sui campi sensibili.
+
+## Suite automatica collegata ai JSON
+
+Da `wallet/`:
+
+```bash
+npm test
+npm run test:fixtures
+npm run typecheck
+```
+
+`npm test` include automaticamente `tests/fixture-scoring.test.ts`,
+`tests/fixture-payments.test.ts`, `tests/routing-history.test.ts` e
+`tests/topology.test.ts`.
+`test:fixtures` seleziona soltanto i quattro file dedicati alle fixture.
+Anche questi test e gli helper sono inclusi nel controllo TypeScript.
+
+| Area | Copertura automatica |
+| --- | --- |
+| Artefatti | Hash, riproducibilita, stessi nodi/canali della topologia e prefissi cumulativi. |
+| Tutti i record | Importi e fee degli hop, somme MPP, saldi BTC/RGB, osservazioni in entrata/uscita e snapshot finali. |
+| Store locale | Quattro dimensioni per tutti i dieci nodi, importazione, deduplicazione, riavvio e recupero di episodi vecchi. |
+| Scoring | Matrice 4 x 10 con input BTC e RGB, storico RAG effettivo delle fixture e risposta del classificatore simulata. |
+| Limiti fisici | Canali non utilizzabili, liquidita BTC/RGB insufficiente, asset diverso e canali inventati dal modello. |
+| Policy | Fee zero, esclusioni, limite dei percorsi, fingerprint e mutazioni della invoice. |
+| Persistenza pagamenti | Timeout, conferme concorrenti, riavvio, riconciliazione e notifica terminale senza duplicati. |
+| Topologia | Tutti i 16 scenari con riferimento indipendente dei percorsi e 16 x 4 prove del payload RPC. |
+| Errori AI | Errori HTTP, timeout, JSON malformato, risposta incompleta o troncata ed elementi nulli. |
+| Driver live | Esecuzione contro un server HTTP di test, origine dei documenti, isolamento, cleanup e rifiuto del fallback locale. |
+
+Il riferimento dei percorsi nei test e un controllo delle aspettative della
+fixture, non una seconda implementazione del router di produzione. Le prove
+RPC usano `RgbWallet`, `PaymentStore` e `RlnClient` reali con le risposte HTTP del
+daemon simulate. Non dimostrano l'esecuzione di pagamenti sulla rete regtest.
+I test dei singoli componenti gia presenti rimangono volutamente piccoli e
+indipendenti dalle fixture; le nuove prove di integrazione le caricano tutte.
+
+## Scoring con QVAC reale
+
+Con `npm run qvac:serve` gia avviato in un altro terminale:
+
+```bash
+# Campione rapido: storico da 20, nodo Alice.
+npm run qvac:smoke:scoring
+
+# Un altro campione/nodo.
+npm run qvac:smoke:scoring -- --history 500 --node frank
+
+# Matrice completa: quattro campioni per dieci nodi.
+npm run qvac:smoke:scoring -- --all
+
+# Verifica selezione e conteggi senza inferenza o upload.
+npm run qvac:smoke:scoring -- --all --dry-run
+```
+
+Il driver carica gli episodi del nodo dal JSON, crea uno store QVAC con nome
+univoco e verifica ricerca remota e classificazione. Lo store locale di fallback
+non puo far passare il test se QVAC non risponde. Il driver rimuove i file e lo
+store creati dalla propria esecuzione. La matrice completa carica 5000 episodi e
+puo richiedere tempo per embedding e inferenza.
+
+Restano distinti i livelli da eseguire con servizi reali: questo driver verifica
+QVAC/RAG; `test:mpp`, `test:rgb` e `e2e-lightning.mjs` verificano il backend sui
+loro scenari regtest esistenti. Non esiste ancora un runner che crei i dieci nodi
+e faccia eseguire al Rust tutti i 16 scenari di `topology.json`. Il successo della
+suite offline non viene presentato come certificazione di quel livello.
