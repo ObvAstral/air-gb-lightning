@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export const ALICE_BASE_URL = 'http://127.0.0.1:8787';
 export const BOB_BASE_URL = 'http://127.0.0.1:8788';
@@ -30,5 +30,5 @@ export function useNodeSession(baseUrl: string) {
     if (!response.ok) throw new Error(value.message ?? value.code ?? `HTTP ${response.status}`);
     return value as T;
   }, [baseUrl, token]);
-  return { token, offline, api };
+  return useMemo(() => ({ baseUrl, token, offline, api }), [baseUrl, token, offline, api]);
 }
