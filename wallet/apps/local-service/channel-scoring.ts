@@ -891,7 +891,10 @@ export function sanitizeAndValidateChannelScore(
   const preferredProfile = inferProfileFromPreference(input.userPreference, input.compiledPolicy);
   if (preferredProfile) {
     obj.overallProfile = preferredProfile;
-  } else if (!validProfiles.includes(obj.overallProfile as ChannelScoreProfile)) {
+  } else if (
+    !validProfiles.includes(obj.overallProfile as ChannelScoreProfile) ||
+    obj.overallProfile === 'single_path_privacy'
+  ) {
     obj.overallProfile = input.assetId ? 'high_reliability' : 'balanced';
   }
 
@@ -950,8 +953,14 @@ export function sanitizeAndValidateChannelScore(
       ? match.reason.trim().slice(0, 120)
       : fallback.reason.slice(0, 120);
 
-    // Enforce physical hard constraints so LLM cannot mark an unusable or underfunded channel as optimal/good
-    if (fallback.classification === 'avoid' || fallback.classification === 'insufficient_liquidity') {
+    // Enforce physical hard constraints so LLM cannot mark an unusable or underfunded channel as optimal/good,
+    // nor falsely mark a physically sufficient channel as insufficient_liquidity/avoid.
+    if (
+      fallback.classification === 'avoid' ||
+      fallback.classification === 'insufficient_liquidity' ||
+      classification === 'insufficient_liquidity' ||
+      classification === 'avoid'
+    ) {
       classification = fallback.classification;
       score = fallback.score;
       reason = fallback.reason.slice(0, 120);
@@ -1148,7 +1157,7 @@ export async function scoreChannelsWithQvac(
         model,
         stream: false,
         temperature: 0,
-        max_tokens: 512,
+        max_tokens: 1024,
         reasoning_budget: false,
         messages: [
           { role: 'system', content: SCORER_SYSTEM_PROMPT },

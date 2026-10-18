@@ -49,12 +49,13 @@
     },
     "models": {
       "my-llm": {
-        "model": "QWEN3_8B_INST_Q4_K_M",
+        "model": "QWEN3_5_0_8B_MULTIMODAL_Q4_K_M",
         "default": true,
         "preload": true,
         "config": {
           "ctx_size": 8192,
-          "tools": true
+          "tools": true,
+          "projectionModelSrc": "MMPROJ_QWEN3_5_0_8B_MULTIMODAL_Q8_0"
         }
       },
       "qwen-fast": {

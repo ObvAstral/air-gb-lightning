@@ -3,60 +3,180 @@ services:
   alice:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   bob:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   carol:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   dave:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   erin:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   frank:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   grace:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   heidi:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   ivan:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   judy:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   karl:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   leo:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   mia:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   nico:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   olive:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   paul:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   quinn:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   ruth:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   saul:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"
   tara:
     environment:
       AIRGB_BENCHMARK_EVENTS: "1"
+      QVAC_BRIDGE_HOST: "${QVAC_BRIDGE_HOST:-host.docker.internal}"
+      QVAC_MODEL: "${QVAC_MODEL:-qwen-fast}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "./wallet/apps/local-service:/app/apps/local-service:ro"

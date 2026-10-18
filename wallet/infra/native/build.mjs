@@ -88,7 +88,7 @@ if (!ready) {
     }
     process.stdout.write(`Compilazione delle fork RGB MPP con Rust ${config.rustToolchain}; può richiedere diversi minuti.\n`);
     run('rustup', ['run', config.rustToolchain, 'cargo', 'build', '--release', '--locked', '--no-default-features', '--features', config.features.join(',')], {
-      cwd: source, env: { ...process.env, CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? '1' },
+      cwd: source, env: { ...process.env, CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? '8' },
     });
     await install(join(source, 'target/release', binaryName));
   }

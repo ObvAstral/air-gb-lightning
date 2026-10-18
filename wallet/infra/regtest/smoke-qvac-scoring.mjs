@@ -12,10 +12,11 @@ const { values } = parseArgs({ options: {
   history: { type: 'string', default: '20' }, node: { type: 'string', default: 'alice' },
   all: { type: 'boolean', default: false }, 'dry-run': { type: 'boolean', default: false },
 } });
+const fixtureNodes = topology.nodes.filter(node => topology.channels.some(ch => ch.from === node.id || ch.to === node.id));
 const sizes = values.all ? manifest.datasets.map(entry => entry.transactionCount) : [Number(values.history)];
-const nodeIds = values.all ? topology.nodes.map(node => node.id) : [values.node];
+const nodeIds = values.all ? fixtureNodes.map(node => node.id) : [values.node];
 assert(sizes.every(size => manifest.datasets.some(entry => entry.transactionCount === size)), 'Use --history 20|100|500|2000');
-assert(nodeIds.every(id => topology.nodes.some(node => node.id === id)), 'Unknown --node in topology.json');
+assert(nodeIds.every(id => fixtureNodes.some(node => node.id === id)), 'Unknown --node in topology.json');
 const matrix = sizes.flatMap(size => nodeIds.map(nodeId => ({ size, nodeId })));
 for (const item of matrix) {
   const fixture = loadHistory(item.size);

@@ -177,8 +177,11 @@ export class EphemeralRoutingContext {
     const totalAssetAcrossUsable = this.channelBounds.reduce((acc, b) => acc + b.maxSafeAssetAmount, 0n);
 
     const singlePathPossible = singleCoverChannels.length > 0;
+    const mppContributors = this.channelBounds.filter(
+      b => b.maxSafeSinglePathMsat > 0n && (!needsRgb || b.maxSafeAssetAmount > 0n),
+    );
     const mppPossible =
-      this.channelBounds.length >= 2 &&
+      mppContributors.length >= 2 &&
       totalMsatAcrossUsable >= reqMsat &&
       (!needsRgb || totalAssetAcrossUsable >= reqAsset);
 
@@ -206,7 +209,7 @@ export class EphemeralRoutingContext {
           if (accMsat >= reqMsat && (!needsRgb || accAsset >= reqAsset)) break;
         }
         recommendedMaxPaths = Math.max(2, Math.min(8, parts));
-      } else if (singlePathPossible && healthySingleChannels.length === 0 && mppPossible) {
+      } else if (singlePathPossible && healthySingleChannels.length === 0 && mppPossible && !needsRgb) {
         // Single channel exists but would be heavily drained (<35% ratio); split across 2 paths
         recommendedMaxPaths = 2;
       }
@@ -498,7 +501,7 @@ export async function selectRoutingAlgorithmWithQvac(
             model,
             stream: false,
             temperature: 0,
-            max_tokens: 256,
+            max_tokens: 512,
             reasoning_budget: false,
             messages: [
               { role: 'system', content: SELECTOR_SYSTEM_PROMPT },

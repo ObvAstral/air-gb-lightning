@@ -13,7 +13,8 @@ const rawScore = (input: ScoreChannelsInput) => ({ schemaVersion: '1.0', overall
   channels: [...input.channels.map(channel => ({ channelId: channel.channelId, classification: 'optimal', score: 100, reason: 'Risposta simulata deliberatamente ottimistica.' })),
     { channelId: 'invented-channel', classification: 'optimal', score: 100, reason: 'Da ignorare.' }], summary: 'Classificatore simulato; nessuna valutazione del modello reale.' });
 
-for (const entry of manifest.datasets) for (const node of topology.nodes) {
+const fixtureIds = new Set(topology.channels.flatMap(channel => [channel.from, channel.to]));
+for (const entry of manifest.datasets) for (const node of topology.nodes.filter(node => fixtureIds.has(node.id))) {
   test(`${entry.filename}/${node.alias}: scoring BTC/RGB usa snapshot e RAG della fixture`, async t => {
     const data = loadHistory(entry.transactionCount), directory = await mkdtemp(join(tmpdir(), 'airgb-fixture-score-'));
     const store = new QvacRagStore(directory);

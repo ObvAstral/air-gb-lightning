@@ -238,6 +238,15 @@ const server = createServer(async (req, res) => {
       if ((body.assetId !== null && typeof body.assetId !== 'string') || (body.amount !== null && typeof body.amount !== 'string') || typeof body.expirySec !== 'number') return json(res, 400, { code: 'INVALID_INPUT' });
       return json(res, 200, await wallet.createRgbInvoice({ assetId: body.assetId, amount: body.amount, expirySec: body.expirySec }));
     }
+    if (path === '/api/wallet/rgb/send') {
+      if (typeof body.assetId !== 'string' || !Array.isArray(body.recipients)) return json(res, 400, { code: 'INVALID_INPUT' });
+      return json(res, 200, await wallet.sendRgb({
+        assetId: body.assetId,
+        recipients: body.recipients as { invoice: string; amount: string }[],
+        donation: typeof body.donation === 'boolean' ? body.donation : true,
+        feeRateSatPerVbyte: typeof body.feeRateSatPerVbyte === 'string' ? body.feeRateSatPerVbyte : '2',
+      }));
+    }
     if (path === '/api/wallet/peers/connect') {
       if (typeof body.peer !== 'string') return json(res, 400, { code: 'INVALID_INPUT' });
       return json(res, 200, await wallet.connectPeer(body.peer));

@@ -275,6 +275,25 @@ export class RgbWallet {
     if (!invoice) throw new WalletError('INVOICE_SHAPE', 'Risposta RGB nativa non riconosciuta');
     return { invoice, kind: 'rgb-onchain' };
   }
+  async sendRgb(input: { assetId: string; recipients: { invoice: string; amount: string }[]; donation?: boolean; feeRateSatPerVbyte?: string }) {
+    const account = this.requireAccount();
+    const entries = [];
+    for (const r of input.recipients) {
+      const decoded = object(await account.decodeRgbInvoice(r.invoice));
+      entries.push({
+        recipient_id: decoded.recipient_id,
+        assignment: { type: 'Fungible', value: safeNumber(r.amount, 'Importo RGB') },
+        transport_endpoints: Array.isArray(decoded.transport_endpoints) && decoded.transport_endpoints.length ? decoded.transport_endpoints : [process.env.RGB_PROXY_ENDPOINT!],
+      });
+    }
+    return object(await account.sendRgb({
+      donation: input.donation ?? true,
+      fee_rate: safeNumber(input.feeRateSatPerVbyte ?? '2', 'Fee in sat/vB'),
+      min_confirmations: 1,
+      expiration_timestamp: Math.floor(Date.now() / 1000) + 3600,
+      recipient_map: { [input.assetId]: entries },
+    }));
+  }
   async decodeLightning(invoice: string): Promise<DecodedLightning> {
     if (!/^lnbcrt[0-9a-z]{10,4096}$/i.test(invoice)) throw new WalletError('INVALID_INVOICE', 'Serve una invoice Lightning regtest');
     const row = object(await this.requireAccount().decodeInvoice(invoice));
