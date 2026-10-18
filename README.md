@@ -1,12 +1,59 @@
 # AIR-GB Lightning
 
-**AIR-GB Lightning** is a local development and testing environment designed for issuing and transferring RGB smart assets over the Bitcoin Lightning Network with Multi-Path Payment (MPP) support. It integrates Bitcoin Core (`bitcoind`), an Electrum indexer (`electrs`), an RGB proxy, and two Lightning nodes running custom Rust Lightning daemon forks (`rgb-lightning-node` and `rust-lightning`). The repository provides a Node.js orchestration service, an interactive web UI, a CLI for asset issuance, channel management, and multi-hop payments, automated end-to-end MPP testing suites, and QVAC AI platform integration.
+**AIR-GB Lightning** is a full-stack development, orchestration, and benchmarking environment for issuing and transferring **RGB smart-contract assets** over the **Bitcoin Lightning Network** with native **Multi-Path Payment (MPP)** support and **local QVAC AI routing optimization**.
 
-Local regtest environment with bitcoind, electrs, RGB proxy, and two Lightning nodes (Alice and Bob).
-The Lightning backend uses ObvAstral's personal forks with RGB MPP support:
+It integrates Bitcoin Core (`bitcoind`), an Electrum indexer (`electrs`), an RGB proxy, a Node.js orchestration service, an interactive React web UI, a CLI, and custom Rust Lightning daemon forks (`rgb-lightning-node` and `rust-lightning`):
 
 - [`rgb-lightning-node`, `feat/rgb-mpp`](https://github.com/ObvAstral/rgb-lightning-node/tree/feat/rgb-mpp), commit `7106edd0fa3dd0a8bc0f35e54cefac844495a068`.
 - [`rust-lightning`, `feat/rgb-mpp`](https://github.com/ObvAstral/rust-lightning/tree/feat/rgb-mpp), commit `2f19847fc65a16294abcc26188ba8443804662be`.
+
+> **Deep-Dive Technical Documentation**:
+> - [**Architecture, Native RGB MPP Implementation & 20-Node Benchmark Evaluation (`docs/ARCHITECTURE_AND_BENCHMARK.md`)**](docs/ARCHITECTURE_AND_BENCHMARK.md)
+> - [**QVAC AI Features 1, 2 & 3 Specification & API Contracts (`docs/qvac/features-1-and-2-implementation.md`)**](docs/qvac/features-1-and-2-implementation.md)
+> - [**20-Payment Regtest Benchmark Runner Guide (`wallet/infra/benchmark/README.md`)**](wallet/infra/benchmark/README.md)
+
+---
+
+## Architecture & AI-Driven Multi-Path Routing
+
+Standard `rgb-lightning-node` deployments route RGB assets along a single channel path (`max_path_count = 1`) using static Dijkstra pathfinding. When liquidity is split across parallel channels, transfers larger than a single channel fail and liquidity gets stranded at leaf nodes.
+
+**AIR-GB Lightning** combines **local QVAC AI inference** (`Qwen3.5-0.8B` + `TurboVec` RAG over node-scoped SQLite telemetry), **deterministic physical liquidity guardrails**, and **four native Rust graph planners** (`min_cost_flow`, `multi_objective`, `yen`, and `ldk_dijkstra`):
+
+![Routing Architecture Pipeline](docs/assets/architecture-pipeline.svg)
+
+### Core Capabilities
+
+1. **Natural Language Constraint Compilation (`interpret.ts` $\rightarrow$ `compile.ts`)**: Translates plain-language payment preferences (maximum fee budgets, node alias exclusions, fee vs. reliability priority, or single-path privacy requests) into a cryptographically fingerprinted `CompiledPolicy`.
+2. **First-Party RAG Channel Scoring (`channel-scoring.ts`)**: Queries the node's own historical payment telemetry indexed in **QVAC TurboVec** (`/v1/vector_stores`) to classify local channels (`optimal`, `good`, `congested`, `unreliable`, `insufficient_liquidity`, `avoid`) and tune `ObjectiveWeights`. Deterministic physical balance guards prevent the LLM from hallucinating liquidity failures on valid partial MPP channels.
+3. **Dynamic Strategy & MPP Selection (`routing-selector.ts`)**: Evaluates single-path vs. multi-path feasibility in an ephemeral RAM context (`EphemeralRoutingContext`, wiped immediately after selection). Automatically engages **`min_cost_flow`** when an RGB transfer requires splitting across multiple channels, or **`multi_objective`** / **`yen`** / **`ldk_dijkstra`** for single-corridor optimization.
+4. **Native 4-Layer RGB Multi-Path Payments (`routes.rs` & `channel.rs`)**:
+   - Decomposes RGB flows via successive shortest augmenting paths (`MinCostFlow`) and allocates the Bitcoin carrier (`>= 3,000,000` msat per HTLC) proportionally across shards.
+   - Aggregates multi-part BTC + RGB shards atomically at the recipient (`InboundPayment`) before releasing the preimage.
+   - Fixes upstream `rust-lightning` multi-HTLC commitment coloring (`color_commitment`) by reserving in-flight RGB liquidity (`available_outbound_rgb` / `available_inbound_rgb`) and computing exact claimed-preimage RGB deltas.
+
+---
+
+## Benchmark Summary: AIR-GB vs. Stock Single-Path RGB Lightning
+
+We evaluated AIR-GB against stock single-path `rgb-lightning-node` across 20 sequential live regtest scenarios on a 20-node, 15-channel topology (`topology-mpp.json`), starting from the exact same normalized channel state hash (`fc59bc78...8b45`):
+
+![Sequential Regtest Benchmark Results](docs/assets/benchmark-results.svg)
+
+| Metric | Stock Baseline (No AI, Single-Path) | AIR-GB (QVAC AI + Native MPP) | Improvement |
+| :--- | :---: | :---: | :---: |
+| **Overall Success Rate (20 Scenarios)** | `7 / 20` (**35.0%**) | `13 / 20` (**65.0%**) | **+30.0 pp (+85.7% more payments)** |
+| **Feasible Scenario Success Rate (16 Reachable)** | `7 / 16` (**43.75%**) | `13 / 16` (**81.25%**) | **+37.5 pp** |
+| **Multi-Path RGB Splits (`02`, `03`, `04`)** | `0 / 3` | **`3 / 3` (`100%`)** | Unlocks `100` RGB (`60+40`) & `80` RGB (`40+40`) splits |
+| **Return Rebalance Flows (`Judy -> Alice`)** | `0 / 3` (`0` RGB returned) | **`3 / 3` (`190` RGB returned)** | Prevents liquidity stranding at leaf nodes |
+| **Routing Fees on Matched Successes** | `5,700` msat | **`1,200` msat** | **-78.95% routing fees paid** |
+| **On-Node Rust Planner Execution Time** | Built-in Dijkstra | **`0.66 – 1.35` ms** | Sub-millisecond graph optimization |
+
+For the full 20-scenario breakdown, topology design (`topology.json` vs. `topology-mpp.json`), and protocol fixes, see [**`docs/ARCHITECTURE_AND_BENCHMARK.md`**](docs/ARCHITECTURE_AND_BENCHMARK.md).
+
+---
+
+## Native Build & Security Model
 
 Commits, toolchain, and the `Cargo.lock` hash are pinned in
 [`wallet/infra/native/source-lock.json`](wallet/infra/native/source-lock.json).
@@ -22,15 +69,6 @@ a private token generated by the service for each daemon; the only
 daemon port exposed by the containers is the Lightning P2P port. The
 `wallet/native-data/runtime/bin/build.json` manifest verifies sources, patches, platform,
 and binary hash, including at startup. MPP splitting is handled by the daemon.
-
-## AI Aspects
-
-The project integrates **QVAC** as an embedded local AI model to optimize and enhance payment routing across the Lightning Network and RGB channels. These AI capabilities encompass four core features:
-
-- **Natural Language Constraint Interpretation**: Translates user payment preferences expressed in plain language (e.g., avoiding specific nodes, setting maximum fee budgets, or prioritizing privacy over cost) into structured routing constraints, penalties, and mandatory node/channel exclusions.
-- **Intelligent Channel Scoring**: Augments LDK's `ProbabilisticScorer` by factoring in historical payment success and failure rates, transaction amounts, user preferences, and real-time network topology to dynamically assess channel reliability.
-- **Dynamic Routing Algorithm Selection**: Analyzes payment sizes and network conditions to choose the most effective routing strategy—dynamically selecting between standard LDK Dijkstra, K-shortest paths, and Min-Cost Flow optimization.
-- **Multi-Path Payment (MPP) Optimization**: Coordinates Multi-Path Payments by determining when splitting is advantageous, computing the optimal number of routes, and distributing amounts across channels to balance fee efficiency and delivery reliability for both Bitcoin and RGB assets.
 
 ## Requirements
 
@@ -211,9 +249,6 @@ make, and a C++ compiler on the host. `npm ci --ignore-scripts` preserves the so
 of this optional addon for explicit compilation; Lightning nodes use
 the Rust daemon and do not require the addon. It does not replace the MPP test.
 
-MPP support does not imply support for the preview's routing constraints:
-fee budgets and exclusions remain disabled until verified in the backend.
-
 ## QVAC
 
 ```bash
@@ -226,12 +261,6 @@ npm run qvac:smoke
 
 UI interpretation communicates with Alice on ports `5173` and `8801`.
 
-## Routing benchmark: QVAC versus stock RGB Lightning
+## Routing Benchmark: QVAC vs. Stock RGB Lightning
 
-The [20-payment benchmark](wallet/infra/benchmark/README.md) uses the local nodes
-from `topology.json`, asks QVAC to select the algorithm and MPP limit before each
-payment, and records settled fees, paths, node logs and before/after snapshots.
-It includes a stock REST adapter and a JSON/CSV comparison command. The runner
-attaches to prepared regtest nodes and does not start or reset the environment.
-See the benchmark guide for the optional observation patch, configuration and
-commands to run on the benchmark machine.
+The [20-payment benchmark runner](wallet/infra/benchmark/README.md) and [architecture & benchmark evaluation report](docs/ARCHITECTURE_AND_BENCHMARK.md) evaluate the 20-node regtest network under both `topology.json` and `topology-mpp.json`, asking QVAC to score local channels and select the routing algorithm and MPP split limit before each payment, while recording settled fees, paths, LDK telemetry events, and pre/post channel balance snapshots.
