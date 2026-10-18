@@ -262,6 +262,7 @@ ensure_demo_asset() {
     return 0
   fi
   echo "Emetto DEMO" >&2
+  prepare_utxos 4 >&2
   out="$(cli issue alice --ticker DEMO --name "Demo asset" --amount 1000)"
   printf '%s\n' "$out" >&2
   asset="$(printf '%s\n' "$out" | issued_asset_id)"
